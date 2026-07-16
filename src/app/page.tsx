@@ -2,7 +2,15 @@ import { SignInButton } from "@clerk/nextjs";
 import { auth } from "@clerk/nextjs/server";
 import Link from "next/link";
 
+import { GuestAccessForm } from "@/components/guest/guest-access-form";
 import { Button, buttonVariants } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 
 export default async function Home() {
   const { userId } = await auth();
@@ -31,14 +39,14 @@ export default async function Home() {
               Dashboard
             </Link>
           ) : (
-            <SignInButton mode="modal">
+            <SignInButton mode="modal" forceRedirectUrl="/admin">
               <Button variant="outline">Sign in</Button>
             </SignInButton>
           )}
         </nav>
       </header>
 
-      <section className="flex flex-1 items-center py-16 sm:py-24">
+      <section className="grid flex-1 items-center gap-12 py-16 lg:grid-cols-[minmax(0,1fr)_24rem] lg:py-24">
         <div className="max-w-2xl">
           <p className="mb-5 text-sm font-semibold tracking-widest text-primary uppercase">
             Private party galleries
@@ -50,17 +58,19 @@ export default async function Home() {
             Guests join with a private code, add their photos, and enjoy the
             moments everyone captured together.
           </p>
-
-          <div className="mt-10 rounded-2xl border bg-card p-6 shadow-xs sm:p-8">
-            <h2 className="text-lg font-semibold text-card-foreground">
-              Simple by design
-            </h2>
-            <p className="mt-2 leading-7 text-muted-foreground">
-              One shared gallery. One private code. No guest accounts and no
-              unnecessary file-management tools.
-            </p>
-          </div>
         </div>
+
+        <Card className="w-full shadow-xs">
+          <CardHeader>
+            <CardTitle className="text-xl">Join a gallery</CardTitle>
+            <CardDescription>
+              No account needed. Use the private code from your invitation.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <GuestAccessForm />
+          </CardContent>
+        </Card>
       </section>
 
       <footer className="border-t pt-6 text-sm text-muted-foreground">

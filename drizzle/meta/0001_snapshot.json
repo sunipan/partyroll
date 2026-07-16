@@ -1,0 +1,218 @@
+{
+  "id": "9897ea40-54b7-4bb8-8c05-ced6ad7d860f",
+  "prevId": "b707a9cf-f640-4fe9-ba08-a29caeeedcdb",
+  "version": "7",
+  "dialect": "postgresql",
+  "tables": {
+    "public.galleries": {
+      "name": "galleries",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "owner_clerk_id": {
+          "name": "owner_clerk_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "slug": {
+          "name": "slug",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "access_version": {
+          "name": "access_version",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 1
+        },
+        "status": {
+          "name": "status",
+          "type": "gallery_status",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'open'"
+        },
+        "event_date": {
+          "name": "event_date",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "galleries_slug_unique": {
+          "name": "galleries_slug_unique",
+          "columns": [
+            {
+              "expression": "slug",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "galleries_owner_created_at_idx": {
+          "name": "galleries_owner_created_at_idx",
+          "columns": [
+            {
+              "expression": "owner_clerk_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "galleries_access_version_positive": {
+          "name": "galleries_access_version_positive",
+          "value": "\"galleries\".\"access_version\" >= 1"
+        },
+        "galleries_name_not_blank": {
+          "name": "galleries_name_not_blank",
+          "value": "length(btrim(\"galleries\".\"name\")) > 0"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.rate_limit_counters": {
+      "name": "rate_limit_counters",
+      "schema": "",
+      "columns": {
+        "key_hash": {
+          "name": "key_hash",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "scope": {
+          "name": "scope",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "attempts": {
+          "name": "attempts",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "window_started_at": {
+          "name": "window_started_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "expires_at": {
+          "name": "expires_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {
+        "rate_limit_counters_expires_at_idx": {
+          "name": "rate_limit_counters_expires_at_idx",
+          "columns": [
+            {
+              "expression": "expires_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "rate_limit_counters_attempts_nonnegative": {
+          "name": "rate_limit_counters_attempts_nonnegative",
+          "value": "\"rate_limit_counters\".\"attempts\" >= 0"
+        },
+        "rate_limit_counters_scope_not_blank": {
+          "name": "rate_limit_counters_scope_not_blank",
+          "value": "length(btrim(\"rate_limit_counters\".\"scope\")) > 0"
+        }
+      },
+      "isRLSEnabled": false
+    }
+  },
+  "enums": {
+    "public.gallery_status": {
+      "name": "gallery_status",
+      "schema": "public",
+      "values": [
+        "open",
+        "closed",
+        "archived"
+      ]
+    }
+  },
+  "schemas": {},
+  "sequences": {},
+  "roles": {},
+  "policies": {},
+  "views": {},
+  "_meta": {
+    "columns": {},
+    "schemas": {},
+    "tables": {}
+  }
+}

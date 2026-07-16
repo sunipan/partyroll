@@ -1,14 +1,41 @@
-export default function Home() {
+import { SignInButton } from "@clerk/nextjs";
+import { auth } from "@clerk/nextjs/server";
+import Link from "next/link";
+
+import { Button, buttonVariants } from "@/components/ui/button";
+
+export default async function Home() {
+  const { userId } = await auth();
   return (
     <main className="mx-auto flex min-h-dvh w-full max-w-5xl flex-col px-6 py-8 sm:px-10 sm:py-10">
-      <header className="flex items-center gap-3" aria-label="Partyroll">
-        <span
-          aria-hidden="true"
-          className="flex size-10 items-center justify-center rounded-xl bg-primary text-lg font-semibold text-primary-foreground"
+      <header
+        className="flex items-center justify-between gap-6"
+        aria-label="Partyroll"
+      >
+        <Link
+          href="/"
+          className="flex items-center gap-3 rounded-lg outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
         >
-          P
-        </span>
-        <span className="text-lg font-semibold tracking-tight">Partyroll</span>
+          <span
+            aria-hidden="true"
+            className="flex size-10 items-center justify-center rounded-xl bg-primary text-lg font-semibold text-primary-foreground"
+          >
+            P
+          </span>
+          <span className="text-lg font-semibold tracking-tight">Partyroll</span>
+        </Link>
+
+        <nav aria-label="Account">
+          {userId ? (
+            <Link href="/admin" className={buttonVariants()}>
+              Dashboard
+            </Link>
+          ) : (
+            <SignInButton mode="modal">
+              <Button variant="outline">Sign in</Button>
+            </SignInButton>
+          )}
+        </nav>
       </header>
 
       <section className="flex flex-1 items-center py-16 sm:py-24">

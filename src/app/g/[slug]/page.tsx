@@ -2,6 +2,10 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { CalendarDays, Images, LockKeyhole } from "lucide-react";
 
+import {
+  GalleryMediaViewer,
+  type GalleryMediaViewerItem,
+} from "@/components/gallery/media-viewer";
 import { PhotoUploadQueue } from "@/components/guest/photo-upload-queue";
 import { buttonVariants } from "@/components/ui/button";
 import {
@@ -102,35 +106,7 @@ export default async function GuestGalleryPage({
               </p>
             </div>
           </div>
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {readyMedia.map((media) => (
-              <Card key={media.id} className="overflow-hidden bg-card shadow-xs">
-                {media.mediaKind === "video" ? (
-                  <video
-                    controls
-                    preload="metadata"
-                    src={media.originalUrl}
-                    className="aspect-square w-full bg-black object-contain"
-                    aria-label={getMediaLabel(media)}
-                  />
-                ) : (
-                  /* eslint-disable-next-line @next/next/no-img-element -- Private media uses authenticated same-origin routes. */
-                  <img
-                    src={media.displayUrl}
-                    alt={getMediaLabel(media)}
-                    className="aspect-square w-full bg-muted object-cover"
-                    loading="lazy"
-                  />
-                )}
-                <CardContent className="space-y-1">
-                  <p className="truncate font-medium">{getMediaLabel(media)}</p>
-                  <p className="text-xs text-muted-foreground">
-                    {formatMediaDetails(media)}
-                  </p>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
+          <GalleryMediaViewer items={readyMedia.map(toGalleryMediaViewerItem)} />
         </section>
       ) : (
         <Card className="mb-12 border-dashed bg-card/70 py-12 text-center sm:py-16">
@@ -152,31 +128,19 @@ export default async function GuestGalleryPage({
   );
 }
 
-function getMediaLabel(media: {
-  originalFilename: string;
-}) {
-  return media.originalFilename;
-}
-
-function formatMediaDetails(media: {
-  originalByteSize: number;
-  width: number | null;
-  height: number | null;
-}) {
-  const dimensions =
-    media.width && media.height ? `${media.width}×${media.height}` : null;
-  const byteSize = formatByteSize(media.originalByteSize);
-
-  return [dimensions, byteSize].filter(Boolean).join(" · ") || "Ready";
-}
-
-function formatByteSize(byteSize: number) {
-  return new Intl.NumberFormat("en", {
-    maximumFractionDigits: 1,
-    style: "unit",
-    unit: byteSize >= 1024 * 1024 ? "megabyte" : "kilobyte",
-    unitDisplay: "short",
-  }).format(byteSize / (byteSize >= 1024 * 1024 ? 1024 * 1024 : 1024));
+function toGalleryMediaViewerItem(media: GalleryMediaViewerItem) {
+  return {
+    id: media.id,
+    originalFilename: media.originalFilename,
+    mediaKind: media.mediaKind,
+    originalUrl: media.originalUrl,
+    displayUrl: media.displayUrl,
+    thumbnailUrl: media.thumbnailUrl,
+    downloadUrl: media.downloadUrl,
+    originalByteSize: media.originalByteSize,
+    width: media.width,
+    height: media.height,
+  } satisfies GalleryMediaViewerItem;
 }
 
 function formatEventDate(value: string) {

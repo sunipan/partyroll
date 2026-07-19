@@ -105,19 +105,20 @@ describe("GalleryAdminPage media", () => {
     expect(html).toContain(
       `/admin/galleries/${galleryId}/media/${imageId}/thumbnail`,
     );
-    expect(html).toContain(
-      `/admin/galleries/${galleryId}/media/${imageId}/display`,
-    );
+    expect(html).toContain("View image dance-floor.png");
+    expect(html).toContain("View video first-dance.mp4");
     expect(html).toContain(
       `/admin/galleries/${galleryId}/media/${imageId}/download`,
     );
-    expect(html).toContain(`/admin/galleries/${galleryId}/media/${videoId}/video`);
     expect(html).toContain(
       `/admin/galleries/${galleryId}/media/${videoId}/download`,
     );
     expect(html).toContain("2 kB");
+    expect(html).toContain("Image · 800×600 · 2 kB");
+    expect(html).toContain("Download original dance-floor.png");
     expect(html).toContain("using 4 kB");
     expect(html).not.toContain("Delete media");
+    expect(html).not.toContain("autoplay");
     expect(html).not.toMatch(r2CredentialUrlPattern);
     expect(listReadyMediaForOwnerGallery).toHaveBeenCalledWith({
       ownerClerkId: "owner-1",

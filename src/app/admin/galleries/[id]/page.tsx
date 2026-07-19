@@ -8,6 +8,10 @@ import { AdminHeader } from "@/components/admin/admin-header";
 import { CopyField } from "@/components/admin/copy-field";
 import { GalleryStatusBadge } from "@/components/admin/gallery-status-badge";
 import { GalleryStatusControls } from "@/components/admin/gallery-status-controls";
+import {
+  GalleryMediaViewer,
+  type GalleryMediaViewerItem,
+} from "@/components/gallery/media-viewer";
 import { Button, buttonVariants } from "@/components/ui/button";
 import {
   Card,
@@ -169,52 +173,7 @@ export default async function GalleryAdminPage({ params }: GalleryPageProps) {
                 No uploaded media yet.
               </div>
             ) : (
-              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                {readyMedia.map((media) => (
-                  <div key={media.id} className="overflow-hidden rounded-xl border bg-background">
-                    {media.mediaKind === "video" ? (
-                      <video
-                        controls
-                        preload="metadata"
-                        src={media.originalUrl}
-                        className="aspect-square w-full bg-black object-contain"
-                        aria-label={getMediaLabel(media)}
-                      />
-                    ) : (
-                      /* eslint-disable-next-line @next/next/no-img-element -- Private media uses authenticated same-origin routes. */
-                      <img
-                        src={media.thumbnailUrl}
-                        alt={getMediaLabel(media)}
-                        className="aspect-square w-full bg-muted object-cover"
-                        loading="lazy"
-                      />
-                    )}
-                    <div className="space-y-3 p-3">
-                      <div>
-                        <p className="truncate font-medium">{getMediaLabel(media)}</p>
-                        <p className="mt-1 text-xs text-muted-foreground">
-                          {formatMediaDetails(media)}
-                        </p>
-                      </div>
-                      <div className="flex flex-wrap gap-2">
-                        <a
-                          href={media.mediaKind === "image" ? media.displayUrl : media.originalUrl}
-                          className={buttonVariants({ variant: "outline", size: "sm" })}
-                        >
-                          {media.mediaKind === "image" ? "Open preview" : "Open video"}
-                        </a>
-                        <a
-                          href={media.downloadUrl}
-                          className={buttonVariants({ variant: "outline", size: "sm" })}
-                          download={media.originalFilename}
-                        >
-                          Download original
-                        </a>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
+              <GalleryMediaViewer items={readyMedia.map(toGalleryMediaViewerItem)} />
             )}
           </CardContent>
         </Card>
@@ -241,22 +200,19 @@ export default async function GalleryAdminPage({ params }: GalleryPageProps) {
   );
 }
 
-function getMediaLabel(media: {
-  originalFilename: string;
-}) {
-  return media.originalFilename;
-}
-
-function formatMediaDetails(media: {
-  originalByteSize: number;
-  width: number | null;
-  height: number | null;
-}) {
-  const dimensions =
-    media.width && media.height ? `${media.width}×${media.height}` : null;
-  const byteSize = formatByteSize(media.originalByteSize);
-
-  return [dimensions, byteSize].filter(Boolean).join(" · ") || "Ready";
+function toGalleryMediaViewerItem(media: GalleryMediaViewerItem) {
+  return {
+    id: media.id,
+    originalFilename: media.originalFilename,
+    mediaKind: media.mediaKind,
+    originalUrl: media.originalUrl,
+    displayUrl: media.displayUrl,
+    thumbnailUrl: media.thumbnailUrl,
+    downloadUrl: media.downloadUrl,
+    originalByteSize: media.originalByteSize,
+    width: media.width,
+    height: media.height,
+  } satisfies GalleryMediaViewerItem;
 }
 
 function formatByteSize(byteSize: number) {

@@ -12,6 +12,7 @@ vi.mock("@/lib/galleries/queries", () => ({
 }));
 vi.mock("@/lib/uploads/media", () => ({
   deleteReadyMediaForOwner: vi.fn(),
+  retryPendingMediaDeletionForOwner: vi.fn(),
 }));
 vi.mock("next/cache", () => ({
   revalidatePath: vi.fn(),
@@ -22,17 +23,27 @@ vi.mock("next/navigation", () => ({
   }),
 }));
 
-import { deleteGalleryMediaAction } from "./actions";
+import {
+  deleteGalleryMediaAction,
+  retryGalleryMediaDeletionAction,
+} from "./actions";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { requireAdmin } from "@/lib/auth";
-import { deleteReadyMediaForOwner } from "@/lib/uploads/media";
+import {
+  deleteReadyMediaForOwner,
+  retryPendingMediaDeletionForOwner,
+} from "@/lib/uploads/media";
 
 describe("deleteGalleryMediaAction", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.mocked(requireAdmin).mockResolvedValue({ userId: "owner-1" });
     vi.mocked(deleteReadyMediaForOwner).mockResolvedValue({
+      outcome: "deleted",
+      media: {} as never,
+    });
+    vi.mocked(retryPendingMediaDeletionForOwner).mockResolvedValue({
       outcome: "deleted",
       media: {} as never,
     });
@@ -98,5 +109,61 @@ describe("deleteGalleryMediaAction", () => {
     expect(redirect).not.toHaveBeenCalled();
     expect(revalidatePath).toHaveBeenCalledWith("/admin");
     expect(revalidatePath).toHaveBeenCalledWith(`/admin/galleries/${galleryId}`);
+  });
+});
+
+describe("retryGalleryMediaDeletionAction", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(requireAdmin).mockResolvedValue({ userId: "owner-1" });
+    vi.mocked(retryPendingMediaDeletionForOwner).mockResolvedValue({
+      outcome: "deleted",
+      media: {} as never,
+    });
+  });
+
+  it("retries the authenticated owner's pending media deletion", async () => {
+    const galleryId = randomUUID();
+    const photoId = randomUUID();
+    const formData = new FormData();
+    formData.set("galleryId", galleryId);
+    formData.set("photoId", photoId);
+
+    await retryGalleryMediaDeletionAction(formData);
+
+    expect(retryPendingMediaDeletionForOwner).toHaveBeenCalledWith({
+      ownerClerkId: "owner-1",
+      galleryId,
+      photoId,
+    });
+    expect(revalidatePath).toHaveBeenCalledWith("/admin");
+    expect(revalidatePath).toHaveBeenCalledWith(`/admin/galleries/${galleryId}`);
+  });
+
+  it("redirects invalid retry input without retrying deletion", async () => {
+    await expect(retryGalleryMediaDeletionAction(new FormData())).rejects.toThrow(
+      "redirect:/admin",
+    );
+
+    expect(retryPendingMediaDeletionForOwner).not.toHaveBeenCalled();
+    expect(redirect).toHaveBeenCalledWith("/admin");
+  });
+
+  it("redirects back to the gallery when pending media is not retryable", async () => {
+    const galleryId = randomUUID();
+    const photoId = randomUUID();
+    const formData = new FormData();
+    formData.set("galleryId", galleryId);
+    formData.set("photoId", photoId);
+    vi.mocked(retryPendingMediaDeletionForOwner).mockResolvedValueOnce({
+      outcome: "not-found",
+    });
+
+    await expect(retryGalleryMediaDeletionAction(formData)).rejects.toThrow(
+      `redirect:/admin/galleries/${galleryId}`,
+    );
+
+    expect(redirect).toHaveBeenCalledWith(`/admin/galleries/${galleryId}`);
+    expect(revalidatePath).not.toHaveBeenCalled();
   });
 });

@@ -7,6 +7,7 @@ import {
   useRef,
   useState,
   type MouseEvent,
+  type ReactNode,
   type RefObject,
   type SyntheticEvent,
 } from "react";
@@ -27,7 +28,13 @@ export type GalleryMediaViewerItem = {
   height: number | null;
 };
 
-export function GalleryMediaViewer({ items }: { items: GalleryMediaViewerItem[] }) {
+export function GalleryMediaViewer({
+  items,
+  itemActions,
+}: {
+  items: GalleryMediaViewerItem[];
+  itemActions?: ReactNode[];
+}) {
   const viewerId = useId();
   const dialogRef = useRef<HTMLDialogElement>(null);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
@@ -120,7 +127,7 @@ export function GalleryMediaViewer({ items }: { items: GalleryMediaViewerItem[] 
   return (
     <>
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {items.map((media) => {
+        {items.map((media, index) => {
           const nameId = `${viewerId}-${media.id}-name`;
           const detailsId = `${viewerId}-${media.id}-details`;
           return (
@@ -161,14 +168,17 @@ export function GalleryMediaViewer({ items }: { items: GalleryMediaViewerItem[] 
                     {formatGalleryMediaDetails(media)}
                   </p>
                 </div>
-                <a
-                  href={media.downloadUrl}
-                  className={buttonVariants({ variant: "outline", size: "sm" })}
-                  download={media.originalFilename}
-                  aria-label={getDownloadViewerActionLabel(media)}
-                >
-                  Download original<span className="sr-only"> {media.originalFilename}</span>
-                </a>
+                <div className="flex flex-wrap gap-2">
+                  <a
+                    href={media.downloadUrl}
+                    className={buttonVariants({ variant: "outline", size: "sm" })}
+                    download={media.originalFilename}
+                    aria-label={getDownloadViewerActionLabel(media)}
+                  >
+                    Download original<span className="sr-only"> {media.originalFilename}</span>
+                  </a>
+                  {itemActions?.[index] ?? null}
+                </div>
               </div>
             </article>
           );

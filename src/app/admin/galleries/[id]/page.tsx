@@ -9,6 +9,10 @@ import { CopyField } from "@/components/admin/copy-field";
 import { GalleryStatusBadge } from "@/components/admin/gallery-status-badge";
 import { GalleryStatusControls } from "@/components/admin/gallery-status-controls";
 import {
+  AdminDeletePendingMediaList,
+  AdminMediaDeletionControl,
+} from "@/components/admin/media-deletion-controls";
+import {
   GalleryMediaViewer,
   type GalleryMediaViewerItem,
 } from "@/components/gallery/media-viewer";
@@ -24,7 +28,10 @@ import { requireAdmin } from "@/lib/auth";
 import { getGalleryInvitation } from "@/lib/galleries/invitations";
 import { getGalleryForOwner } from "@/lib/galleries/queries";
 import { galleryIdSchema } from "@/lib/galleries/rules";
-import { listReadyMediaForOwnerGallery } from "@/lib/uploads/media";
+import {
+  listDeletePendingMediaForOwnerGallery,
+  listReadyMediaForOwnerGallery,
+} from "@/lib/uploads/media";
 
 const dateFormatter = new Intl.DateTimeFormat("en", {
   dateStyle: "long",
@@ -77,6 +84,10 @@ export default async function GalleryAdminPage({
     ownerClerkId: userId,
     galleryId: gallery.id,
     ...(cursor === undefined ? {} : { cursor }),
+  });
+  const deletePendingMedia = await listDeletePendingMediaForOwnerGallery({
+    ownerClerkId: userId,
+    galleryId: gallery.id,
   });
   const readyMedia = readyMediaPage.items;
 
@@ -191,7 +202,17 @@ export default async function GalleryAdminPage({
               </div>
             ) : (
               <>
-                <GalleryMediaViewer items={readyMedia.map(toGalleryMediaViewerItem)} />
+                <GalleryMediaViewer
+                  items={readyMedia.map(toGalleryMediaViewerItem)}
+                  itemActions={readyMedia.map((media) => (
+                    <AdminMediaDeletionControl
+                      key={media.id}
+                      galleryId={gallery.id}
+                      mediaId={media.id}
+                      originalFilename={media.originalFilename}
+                    />
+                  ))}
+                />
                 {readyMediaPage.nextCursor ? (
                   <nav className="mt-6 flex justify-center" aria-label="Uploaded media pagination">
                     <Link
@@ -208,6 +229,10 @@ export default async function GalleryAdminPage({
                 ) : null}
               </>
             )}
+            <AdminDeletePendingMediaList
+              galleryId={gallery.id}
+              items={deletePendingMedia}
+            />
           </CardContent>
         </Card>
 

@@ -13,10 +13,12 @@ import { deleteUploadObjects, getMediaDeletionObjectKeys } from "./objects";
 import {
   claimReadyMediaDeletionForOwner,
   deletePendingMediaRecord,
+  listDeletePendingMediaForOwner,
   getRetryableDeletePendingMediaForOwner,
   listReadyMediaForGuest,
   listReadyMediaForOwner,
   recordMediaDeletionFailure,
+  type DeletePendingMedia,
   type ReadyMedia,
 } from "./queries";
 
@@ -63,6 +65,25 @@ export type DeleteReadyMediaResult =
 
 export type RetryPendingMediaDeletionResult = DeleteReadyMediaResult;
 
+export type DeletePendingMediaView = Pick<
+  DeletePendingMedia,
+  | "id"
+  | "galleryId"
+  | "originalFilename"
+  | "mediaKind"
+  | "declaredByteSize"
+  | "byteSize"
+  | "createdAt"
+  | "readyAt"
+  | "deletionRequestedAt"
+  | "deletionAttempts"
+  | "nextDeletionAttemptAt"
+  | "deletionFailedAt"
+> & {
+  hasRecoverableFailure: boolean;
+  retryAvailable: boolean;
+};
+
 export async function listReadyMediaForGuestGallery(input: {
   galleryId: string;
   slug: string;
@@ -104,6 +125,36 @@ export async function listReadyMediaForOwnerGallery(input: {
       ),
     ),
   };
+}
+
+export async function listDeletePendingMediaForOwnerGallery(input: {
+  ownerClerkId: string;
+  galleryId: string;
+  now?: Date;
+}): Promise<DeletePendingMediaView[]> {
+  const now = input.now ?? new Date();
+  const items = await listDeletePendingMediaForOwner({
+    ownerClerkId: input.ownerClerkId,
+    galleryId: input.galleryId,
+  });
+
+  return items.map((item) => ({
+    id: item.id,
+    galleryId: item.galleryId,
+    originalFilename: item.originalFilename,
+    mediaKind: item.mediaKind,
+    declaredByteSize: item.declaredByteSize,
+    byteSize: item.byteSize,
+    createdAt: item.createdAt,
+    readyAt: item.readyAt,
+    deletionRequestedAt: item.deletionRequestedAt,
+    deletionAttempts: item.deletionAttempts,
+    nextDeletionAttemptAt: item.nextDeletionAttemptAt,
+    deletionFailedAt: item.deletionFailedAt,
+    hasRecoverableFailure: item.deletionFailedAt !== null,
+    retryAvailable:
+      item.nextDeletionAttemptAt === null || item.nextDeletionAttemptAt <= now,
+  }));
 }
 
 export async function deleteReadyMediaForOwner({

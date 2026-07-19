@@ -58,7 +58,27 @@ describe("GalleryMediaViewer", () => {
     expect(html).toContain(getDownloadViewerActionLabel(imageItem));
     expect(html).toContain("Image · 800×600 · 2 kB");
     expect(html).toContain("Video · 3 kB");
+    expect(html).not.toContain("Delete media");
     expect(html).not.toContain("autoplay");
+  });
+
+  it("keeps optional owner actions separate from view and download controls", () => {
+    const html = renderToStaticMarkup(
+      <GalleryMediaViewer
+        items={[imageItem]}
+        itemActions={[
+          <button key="delete" type="button" aria-label="Delete media dance-floor.png">
+            Delete media
+          </button>,
+        ]}
+      />,
+    );
+
+    expect(html).toContain(getOpenViewerActionLabel(imageItem));
+    expect(html).toContain(getDownloadViewerActionLabel(imageItem));
+    expect(html).toContain('aria-label="Delete media dance-floor.png"');
+    expect(html).toContain('type="button"');
+    expect(html).toContain("Download original");
   });
 
   it("renders dialog labels, close control, image preview, video controls, and download action", () => {

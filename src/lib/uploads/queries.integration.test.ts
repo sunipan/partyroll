@@ -648,6 +648,21 @@ describe("photo upload reservations", () => {
           }),
         ).resolves.toEqual({ items: [], nextCursor: null });
 
+        const pendingOwnerMedia =
+          await uploadQueries.listDeletePendingMediaForOwner({
+            ownerClerkId: owner,
+            galleryId: deleteGallery.id,
+          });
+        expect(pendingOwnerMedia).toEqual([
+          expect.objectContaining({
+            id: reservation.photo.id,
+            originalFilename: "delete-media.jpg",
+            deletionRequestedAt: expect.any(Date),
+          }),
+        ]);
+        expect(pendingOwnerMedia[0]).not.toHaveProperty("quarantineObjectKey");
+        expect(pendingOwnerMedia[0]).not.toHaveProperty("originalObjectKey");
+
         const [updatedGallery] = await db
           .select()
           .from(galleries)

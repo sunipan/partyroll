@@ -121,6 +121,37 @@ type ReadyMediaRow = ReadyMedia & {
   cursorCreatedAt: string;
 };
 
+const deletePendingMediaColumns = {
+  id: photos.id,
+  galleryId: photos.galleryId,
+  originalFilename: photos.originalFilename,
+  mediaKind: photos.mediaKind,
+  declaredByteSize: photos.declaredByteSize,
+  byteSize: photos.byteSize,
+  createdAt: photos.createdAt,
+  readyAt: photos.readyAt,
+  deletionRequestedAt: photos.deletionRequestedAt,
+  deletionAttempts: photos.deletionAttempts,
+  nextDeletionAttemptAt: photos.nextDeletionAttemptAt,
+  deletionFailedAt: photos.deletionFailedAt,
+};
+
+export type DeletePendingMedia = Pick<
+  Photo,
+  | "id"
+  | "galleryId"
+  | "originalFilename"
+  | "mediaKind"
+  | "declaredByteSize"
+  | "byteSize"
+  | "createdAt"
+  | "readyAt"
+  | "deletionRequestedAt"
+  | "deletionAttempts"
+  | "nextDeletionAttemptAt"
+  | "deletionFailedAt"
+>;
+
 type ReadyMediaListInput = {
   cursor?: string;
   pageSize?: number;
@@ -367,6 +398,28 @@ export async function listReadyMediaForOwner({
     .limit(pageSize + 1);
 
   return createReadyMediaResult(rows, pageSize);
+}
+
+export async function listDeletePendingMediaForOwner({
+  ownerClerkId,
+  galleryId,
+}: {
+  ownerClerkId: string;
+  galleryId: string;
+}): Promise<DeletePendingMedia[]> {
+  return db
+    .select(deletePendingMediaColumns)
+    .from(photos)
+    .innerJoin(galleries, eq(photos.galleryId, galleries.id))
+    .where(
+      and(
+        eq(photos.galleryId, galleryId),
+        eq(photos.status, "delete_pending"),
+        eq(galleries.id, galleryId),
+        eq(galleries.ownerClerkId, ownerClerkId),
+      ),
+    )
+    .orderBy(desc(photos.deletionRequestedAt), desc(photos.id));
 }
 
 function parseReadyMediaCursor(cursor: string | undefined) {

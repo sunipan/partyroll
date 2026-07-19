@@ -2,15 +2,17 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 
 import {
+  createCancelableMediaViewerCleanup,
   GalleryMediaDialog,
   GalleryMediaViewer,
   formatGalleryMediaDetails,
+  getActiveGalleryMediaItem,
   getDownloadViewerActionLabel,
   getOpenViewerActionLabel,
   getViewerMediaSource,
   resetViewerVideo,
   restoreFocusToViewerTrigger,
-  shouldDismissMediaViewerKey,
+  showNativeMediaDialog,
   type GalleryMediaViewerItem,
 } from "./media-viewer";
 
@@ -95,8 +97,60 @@ describe("GalleryMediaViewer", () => {
     expect(getViewerMediaSource(videoItem)).toBe(videoItem.originalUrl);
     expect(formatGalleryMediaDetails(imageItem)).toBe("Image · 800×600 · 2 kB");
     expect(formatGalleryMediaDetails(videoItem)).toBe("Video · 3 kB");
-    expect(shouldDismissMediaViewerKey("Escape")).toBe(true);
-    expect(shouldDismissMediaViewerKey("Enter")).toBe(false);
+  });
+
+  it("derives active media by id from the current item list", () => {
+    const updatedImage = { ...imageItem, originalFilename: "updated.png" };
+
+    expect(getActiveGalleryMediaItem([imageItem], imageItem.id)).toBe(imageItem);
+    expect(getActiveGalleryMediaItem([updatedImage], imageItem.id)).toBe(
+      updatedImage,
+    );
+    expect(getActiveGalleryMediaItem([videoItem], imageItem.id)).toBeNull();
+    expect(getActiveGalleryMediaItem([imageItem], null)).toBeNull();
+  });
+
+  it("requires showModal for native modal presentation", () => {
+    const unsupportedDialog = { open: false };
+    const failingDialog = {
+      open: false,
+      showModal: vi.fn(() => {
+        throw new Error("showModal failed");
+      }),
+    };
+    const nonOpeningDialog = { open: false, showModal: vi.fn() };
+    const modalDialog = {
+      open: false,
+      showModal: vi.fn(function (this: { open: boolean }) {
+        this.open = true;
+      }),
+    };
+
+    expect(showNativeMediaDialog(unsupportedDialog)).toBe(false);
+    expect(showNativeMediaDialog(failingDialog)).toBe(false);
+    expect(showNativeMediaDialog(nonOpeningDialog)).toBe(false);
+    expect(showNativeMediaDialog(modalDialog)).toBe(true);
+    expect(failingDialog.open).toBe(false);
+    expect(nonOpeningDialog.open).toBe(false);
+    expect(modalDialog.showModal).toHaveBeenCalledOnce();
+  });
+
+  it("cancels Strict Mode rehearsal cleanup before restoring trigger focus", () => {
+    const scheduled: Array<() => void> = [];
+    const cleanup = createCancelableMediaViewerCleanup((callback) => {
+      scheduled.push(callback);
+    });
+    const focus = vi.fn();
+    const trigger = { isConnected: true, focus };
+
+    cleanup.schedule(() => restoreFocusToViewerTrigger(trigger));
+    cleanup.cancel();
+    scheduled.shift()?.();
+    expect(focus).not.toHaveBeenCalled();
+
+    cleanup.schedule(() => restoreFocusToViewerTrigger(trigger));
+    scheduled.shift()?.();
+    expect(focus).toHaveBeenCalledOnce();
   });
 
   it("restores focus only to the connected trigger", () => {

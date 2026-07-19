@@ -176,7 +176,6 @@ describe("admin owner media asset route responses", () => {
       "missing gallery",
       "missing media",
       "not-ready media",
-      "archived gallery",
       "wrong variant for kind",
     ];
 

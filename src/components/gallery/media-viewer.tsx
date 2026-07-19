@@ -6,7 +6,6 @@ import {
   useId,
   useRef,
   useState,
-  type KeyboardEvent,
   type MouseEvent,
   type RefObject,
   type SyntheticEvent,
@@ -34,59 +33,84 @@ export function GalleryMediaViewer({ items }: { items: GalleryMediaViewerItem[] 
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const triggerRef = useRef<HTMLElement | null>(null);
-  const [activeMedia, setActiveMedia] = useState<GalleryMediaViewerItem | null>(null);
+  const suppressDialogCloseEventRef = useRef(false);
+  const [cleanupScheduler] = useState(createCancelableMediaViewerCleanup);
+  const [activeMediaId, setActiveMediaId] = useState<string | null>(null);
+  const activeMedia = getActiveGalleryMediaItem(items, activeMediaId);
+
+  useEffect(() => {
+    if (activeMediaId && !activeMedia) {
+      const removedMediaId = activeMediaId;
+      resetViewerVideo(videoRef.current);
+      queueMicrotask(() => {
+        setActiveMediaId((current) =>
+          current === removedMediaId ? null : current,
+        );
+      });
+    }
+  }, [activeMedia, activeMediaId]);
 
   useEffect(() => {
     if (!activeMedia || !dialogRef.current) return;
 
     const dialog = dialogRef.current;
     const trigger = triggerRef.current;
-    if (!dialog.open) {
-      if (typeof dialog.showModal === "function") {
-        try {
-          dialog.showModal();
-        } catch {
-          dialog.setAttribute("open", "");
-        }
-      } else {
-        dialog.setAttribute("open", "");
-      }
+    cleanupScheduler.cancel();
+
+    if (!showNativeMediaDialog(dialog)) {
+      resetViewerVideo(videoRef.current);
+      setActiveMediaId((current) =>
+        current === activeMedia.id ? null : current,
+      );
+      restoreFocusToViewerTrigger(trigger);
+      if (triggerRef.current === trigger) triggerRef.current = null;
+      return;
     }
+
     closeButtonRef.current?.focus();
     const activeVideo = videoRef.current;
 
     return () => {
       resetViewerVideo(activeVideo);
-      if (dialog.open && typeof dialog.close === "function") {
-        dialog.close();
-      } else {
-        dialog.removeAttribute("open");
-      }
-      restoreFocusToViewerTrigger(trigger);
-      if (triggerRef.current === trigger) triggerRef.current = null;
+      cleanupScheduler.schedule(() => {
+        if (dialog.open && typeof dialog.close === "function") {
+          suppressDialogCloseEventRef.current = true;
+          dialog.close();
+          setTimeout(() => {
+            suppressDialogCloseEventRef.current = false;
+          }, 0);
+        }
+        restoreFocusToViewerTrigger(trigger);
+        if (triggerRef.current === trigger) triggerRef.current = null;
+      });
     };
-  }, [activeMedia]);
+  }, [activeMedia, cleanupScheduler]);
 
-  function openViewer(media: GalleryMediaViewerItem, trigger: HTMLElement) {
+  function openViewer(mediaId: string, trigger: HTMLElement) {
+    cleanupScheduler.cancel();
     resetViewerVideo(videoRef.current);
     triggerRef.current = trigger;
-    setActiveMedia(media);
+    setActiveMediaId(mediaId);
   }
 
   function closeViewer() {
     resetViewerVideo(videoRef.current);
-    setActiveMedia(null);
+    const dialog = dialogRef.current;
+    if (dialog?.open && typeof dialog.close === "function") {
+      dialog.close();
+      return;
+    }
+    setActiveMediaId(null);
   }
 
-  function handleDialogCancel(event: SyntheticEvent<HTMLDialogElement, Event>) {
-    event.preventDefault();
-    closeViewer();
+  function handleDialogCancel() {
+    resetViewerVideo(videoRef.current);
   }
 
-  function handleDialogKeyDown(event: KeyboardEvent<HTMLDialogElement>) {
-    if (!shouldDismissMediaViewerKey(event.key)) return;
-    event.preventDefault();
-    closeViewer();
+  function handleDialogClose() {
+    if (suppressDialogCloseEventRef.current) return;
+    resetViewerVideo(videoRef.current);
+    setActiveMediaId(null);
   }
 
   function handleDialogClick(event: MouseEvent<HTMLDialogElement>) {
@@ -111,7 +135,7 @@ export function GalleryMediaViewer({ items }: { items: GalleryMediaViewerItem[] 
                 aria-haspopup="dialog"
                 aria-label={getOpenViewerActionLabel(media)}
                 className="group block w-full overflow-hidden bg-muted text-left outline-none transition focus-visible:ring-3 focus-visible:ring-ring/50"
-                onClick={(event) => openViewer(media, event.currentTarget)}
+                onClick={(event) => openViewer(media.id, event.currentTarget)}
               >
                 {media.mediaKind === "image" ? (
                   /* eslint-disable-next-line @next/next/no-img-element -- Private media uses authenticated same-origin routes. */
@@ -160,8 +184,8 @@ export function GalleryMediaViewer({ items }: { items: GalleryMediaViewerItem[] 
           closeButtonRef={closeButtonRef}
           videoRef={videoRef}
           onCancel={handleDialogCancel}
+          onClose={handleDialogClose}
           onClick={handleDialogClick}
-          onKeyDown={handleDialogKeyDown}
           onRequestClose={closeViewer}
         />
       ) : null}
@@ -177,8 +201,8 @@ export function GalleryMediaDialog({
   closeButtonRef,
   videoRef,
   onCancel,
+  onClose,
   onClick,
-  onKeyDown,
   onRequestClose,
 }: {
   media: GalleryMediaViewerItem;
@@ -188,8 +212,8 @@ export function GalleryMediaDialog({
   closeButtonRef?: RefObject<HTMLButtonElement | null>;
   videoRef?: RefObject<HTMLVideoElement | null>;
   onCancel?: (event: SyntheticEvent<HTMLDialogElement, Event>) => void;
+  onClose?: (event: SyntheticEvent<HTMLDialogElement, Event>) => void;
   onClick?: (event: MouseEvent<HTMLDialogElement>) => void;
-  onKeyDown?: (event: KeyboardEvent<HTMLDialogElement>) => void;
   onRequestClose: () => void;
 }) {
   return (
@@ -200,8 +224,8 @@ export function GalleryMediaDialog({
       aria-modal="true"
       className="m-auto max-h-[90dvh] w-[min(64rem,calc(100%-2rem))] overflow-hidden rounded-2xl border bg-background p-0 text-foreground shadow-2xl backdrop:bg-black/70"
       onCancel={onCancel}
+      onClose={onClose}
       onClick={onClick}
-      onKeyDown={onKeyDown}
     >
       <div className="flex max-h-[90dvh] flex-col">
         <div className="flex items-start justify-between gap-4 border-b bg-card p-4">
@@ -271,15 +295,54 @@ export function getViewerMediaSource(media: GalleryMediaViewerItem) {
   return media.mediaKind === "image" ? media.displayUrl : media.originalUrl;
 }
 
+export function getActiveGalleryMediaItem(
+  items: readonly GalleryMediaViewerItem[],
+  activeMediaId: string | null,
+) {
+  if (!activeMediaId) return null;
+  return items.find((item) => item.id === activeMediaId) ?? null;
+}
+
+export function showNativeMediaDialog(
+  dialog: Pick<HTMLDialogElement, "open"> &
+    Partial<Pick<HTMLDialogElement, "showModal">>,
+) {
+  if (dialog.open) return true;
+  if (typeof dialog.showModal !== "function") return false;
+
+  try {
+    dialog.showModal();
+  } catch {
+    return false;
+  }
+
+  return dialog.open;
+}
+
+export function createCancelableMediaViewerCleanup(
+  schedule: (callback: () => void) => void = queueMicrotask,
+) {
+  let token = 0;
+
+  return {
+    cancel() {
+      token += 1;
+    },
+    schedule(cleanup: () => void) {
+      const scheduledToken = token + 1;
+      token = scheduledToken;
+      schedule(() => {
+        if (token === scheduledToken) cleanup();
+      });
+    },
+  };
+}
+
 export function formatGalleryMediaDetails(media: GalleryMediaViewerItem) {
   const dimensions = media.width && media.height ? `${media.width}×${media.height}` : null;
   return [media.mediaKind === "image" ? "Image" : "Video", dimensions, formatByteSize(media.originalByteSize)]
     .filter(Boolean)
     .join(" · ");
-}
-
-export function shouldDismissMediaViewerKey(key: string) {
-  return key === "Escape";
 }
 
 export function restoreFocusToViewerTrigger(trigger: Pick<HTMLElement, "focus" | "isConnected"> | null) {

@@ -114,7 +114,7 @@ describe("authorized media asset DB lookups", () => {
     }
   });
 
-  it("returns null uniformly for denied admin owner asset requests", async () => {
+  it("allows owner access to archived gallery media while denying admin owner misses", async () => {
     await expect(
       mediaAssets.lookupAdminMediaAssetForOwner({
         ownerClerkId: owner,
@@ -123,11 +123,18 @@ describe("authorized media asset DB lookups", () => {
         variant: "video",
       }),
     ).resolves.toMatchObject({ objectKey: `assets/${readyVideoId}/original` });
+    await expect(
+      mediaAssets.lookupAdminMediaAssetForOwner({
+        ownerClerkId: owner,
+        galleryId: archivedGallery.id,
+        mediaId: archivedImageId,
+        variant: "display",
+      }),
+    ).resolves.toMatchObject({ objectKey: `assets/${archivedImageId}/display.jpg` });
 
     const denied = [
       { ownerClerkId: otherOwner, galleryId: mainGallery.id, mediaId: readyImageId, variant: "display" as const },
       { ownerClerkId: owner, galleryId: mainGallery.id, mediaId: otherGalleryImageId, variant: "display" as const },
-      { ownerClerkId: owner, galleryId: archivedGallery.id, mediaId: archivedImageId, variant: "display" as const },
       { ownerClerkId: owner, galleryId: mainGallery.id, mediaId: pendingImageId, variant: "display" as const },
       { ownerClerkId: owner, galleryId: mainGallery.id, mediaId: randomUUID(), variant: "display" as const },
       { ownerClerkId: owner, galleryId: mainGallery.id, mediaId: readyVideoId, variant: "thumbnail" as const },

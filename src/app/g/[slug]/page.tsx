@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { CalendarDays, Images, LockKeyhole } from "lucide-react";
 
+import { PhotoUploadQueue } from "@/components/guest/photo-upload-queue";
 import { buttonVariants } from "@/components/ui/button";
 import {
   Card,
@@ -67,23 +68,26 @@ export default async function GuestGalleryPage({
           ) : null}
           {gallery.status === "closed" ? (
             <p className="mt-5 max-w-xl leading-7 text-muted-foreground">
-              This gallery is open for viewing. The host has paused new photo
+              This gallery is open for viewing. The host has paused new media
               uploads.
             </p>
           ) : (
             <p className="mt-5 max-w-xl leading-7 text-muted-foreground">
-              You have private access to view this gallery and add party photos.
+              You have private access to view this gallery and add party photos
+              or videos.
             </p>
           )}
         </div>
       </section>
 
+      {gallery.status === "open" ? <PhotoUploadQueue slug={gallery.slug} /> : null}
+
       <Card className="mb-12 border-dashed bg-card/70 py-12 text-center sm:py-16">
         <CardHeader>
           <Images aria-hidden="true" className="mx-auto size-10 text-primary" />
-          <CardTitle className="mt-3 text-xl">No photos yet</CardTitle>
+          <CardTitle className="mt-3 text-xl">No media yet</CardTitle>
           <CardDescription>
-            Photos shared by guests will appear together in this gallery.
+            Photos and videos shared by guests will appear together in this gallery.
           </CardDescription>
         </CardHeader>
         <CardContent>

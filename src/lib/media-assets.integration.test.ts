@@ -159,6 +159,7 @@ describe("authorized media asset DB lookups", () => {
       { ownerClerkId: owner, galleryId: mainGallery.id, mediaId: otherGalleryImageId, variant: "display" as const },
       { ownerClerkId: owner, galleryId: mainGallery.id, mediaId: pendingImageId, variant: "display" as const },
       { ownerClerkId: owner, galleryId: mainGallery.id, mediaId: deletePendingImageId, variant: "display" as const },
+      { ownerClerkId: owner, galleryId: deletingGallery.id, mediaId: deletingGalleryImageId, variant: "display" as const },
       { ownerClerkId: owner, galleryId: mainGallery.id, mediaId: randomUUID(), variant: "display" as const },
       { ownerClerkId: owner, galleryId: mainGallery.id, mediaId: readyVideoId, variant: "thumbnail" as const },
     ];

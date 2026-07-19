@@ -48,6 +48,7 @@ let db: (typeof import("@/db"))["db"];
 let galleryQueries: typeof import("@/lib/galleries/queries");
 let uploadQueries: typeof import("./queries");
 let cleanupExpiredUploadReservations: (typeof import("./cleanup"))["cleanupExpiredUploadReservations"];
+let cleanupReadyPhotoQuarantine: (typeof import("./cleanup"))["cleanupReadyPhotoQuarantine"];
 const createdGalleryIds: string[] = [];
 
 function expiredAt(now = new Date()) {
@@ -105,7 +106,8 @@ describe("expired upload reservation cleanup", () => {
     ({ db } = await import("@/db"));
     galleryQueries = await import("@/lib/galleries/queries");
     uploadQueries = await import("./queries");
-    ({ cleanupExpiredUploadReservations } = await import("./cleanup"));
+    ({ cleanupExpiredUploadReservations, cleanupReadyPhotoQuarantine } =
+      await import("./cleanup"));
   });
 
   beforeEach(() => {
@@ -152,6 +154,10 @@ describe("expired upload reservation cleanup", () => {
         gallery,
         reservationExpiresAt: expiredAt(now),
       });
+      const activeDeleting = await reserveExpiredPhoto({
+        gallery,
+        reservationExpiresAt: expiredAt(now),
+      });
       const unexpired = await reserveExpiredPhoto({
         gallery,
         reservationExpiresAt: new Date(now.getTime() + 60_000),
@@ -181,6 +187,15 @@ describe("expired upload reservation cleanup", () => {
           ),
         })
         .where(eq(photos.id, activeProcessing.id));
+      await db
+        .update(photos)
+        .set({
+          status: "deleting",
+          processingStartedAt: new Date(
+            now.getTime() - UPLOAD_WORK_LEASE_MILLISECONDS + 1_000,
+          ),
+        })
+        .where(eq(photos.id, activeDeleting.id));
       await db.insert(photos).values({
         id: ownerDeletingReadyId,
         galleryId: gallery.id,
@@ -216,7 +231,7 @@ describe("expired upload reservation cleanup", () => {
       });
       const secondClaims = await uploadQueries.claimExpiredUploadReservations({
         now,
-        limit: 10,
+        limit: 1,
       });
 
       expect(firstClaims).toHaveLength(2);
@@ -244,6 +259,7 @@ describe("expired upload reservation cleanup", () => {
             ...eligibleIds,
             graceProtected.id,
             activeProcessing.id,
+            activeDeleting.id,
             unexpired.id,
             ownerDeletingReadyId,
           ]),
@@ -258,6 +274,12 @@ describe("expired upload reservation cleanup", () => {
       }
       expect(byId.get(graceProtected.id)?.status).toBe("pending");
       expect(byId.get(activeProcessing.id)?.status).toBe("processing");
+      expect(byId.get(activeDeleting.id)).toMatchObject({
+        status: "deleting",
+        processingStartedAt: new Date(
+          now.getTime() - UPLOAD_WORK_LEASE_MILLISECONDS + 1_000,
+        ),
+      });
       expect(byId.get(unexpired.id)?.status).toBe("pending");
       expect(byId.get(ownerDeletingReadyId)).toMatchObject({
         status: "delete_pending",
@@ -287,7 +309,7 @@ describe("expired upload reservation cleanup", () => {
       });
       vi.mocked(deleteUploadObjects).mockResolvedValue(undefined);
 
-      await expect(cleanupExpiredUploadReservations(10)).resolves.toEqual({
+      await expect(cleanupExpiredUploadReservations(2)).resolves.toEqual({
         inspected: 2,
         cleaned: 2,
       });
@@ -324,17 +346,64 @@ describe("expired upload reservation cleanup", () => {
             status: "rejected",
             processingStartedAt: null,
             nextProcessingAttemptAt: null,
-            quarantineDeletedAt: expect.any(Date),
+            quarantineDeletedAt: null,
           }),
           expect.objectContaining({
             id: secondPhoto.id,
             status: "rejected",
             processingStartedAt: null,
             nextProcessingAttemptAt: null,
-            quarantineDeletedAt: expect.any(Date),
+            quarantineDeletedAt: null,
           }),
         ]),
       );
+    },
+    15_000,
+  );
+
+  it(
+    "keeps rejected expired uploads eligible for late signed PUT cleanup",
+    async () => {
+      const gallery = await createGallery();
+      const photo = await reserveExpiredPhoto({ gallery });
+      vi.mocked(deleteUploadObjects).mockResolvedValue(undefined);
+
+      await expect(cleanupExpiredUploadReservations(1)).resolves.toEqual({
+        inspected: 1,
+        cleaned: 1,
+      });
+
+      const [rejectedPhoto] = await db
+        .select()
+        .from(photos)
+        .where(eq(photos.id, photo.id));
+      expect(rejectedPhoto).toMatchObject({
+        status: "rejected",
+        quarantineDeletedAt: null,
+      });
+
+      vi.mocked(deleteUploadObjects).mockClear();
+      vi.mocked(deleteUploadObjects).mockResolvedValue(undefined);
+
+      await expect(cleanupReadyPhotoQuarantine(1)).resolves.toEqual({
+        inspected: 1,
+        cleaned: 1,
+      });
+      expect(deleteUploadObjects).toHaveBeenCalledWith([
+        photo.quarantineObjectKey,
+        photo.originalObjectKey,
+        photo.displayObjectKey,
+        photo.thumbnailObjectKey,
+      ]);
+
+      const [cleanedPhoto] = await db
+        .select()
+        .from(photos)
+        .where(eq(photos.id, photo.id));
+      expect(cleanedPhoto).toMatchObject({
+        status: "rejected",
+        quarantineDeletedAt: expect.any(Date),
+      });
     },
     15_000,
   );
@@ -348,7 +417,7 @@ describe("expired upload reservation cleanup", () => {
         .mockRejectedValueOnce(new Error("R2 deletion failed"))
         .mockResolvedValueOnce(undefined);
 
-      await expect(cleanupExpiredUploadReservations(10)).resolves.toEqual({
+      await expect(cleanupExpiredUploadReservations(1)).resolves.toEqual({
         inspected: 1,
         cleaned: 0,
       });
@@ -369,7 +438,7 @@ describe("expired upload reservation cleanup", () => {
       expect(reservedGallery.reservedPhotoCount).toBe(1);
       expect(reservedGallery.reservedBytes).toBe(declaredByteSize);
 
-      await expect(cleanupExpiredUploadReservations(10)).resolves.toEqual({
+      await expect(cleanupExpiredUploadReservations(1)).resolves.toEqual({
         inspected: 1,
         cleaned: 1,
       });
@@ -387,7 +456,7 @@ describe("expired upload reservation cleanup", () => {
         status: "rejected",
         processingStartedAt: null,
         nextProcessingAttemptAt: null,
-        quarantineDeletedAt: expect.any(Date),
+        quarantineDeletedAt: null,
       });
       expect(cleanedGallery.reservedPhotoCount).toBe(0);
       expect(cleanedGallery.reservedBytes).toBe(0);

@@ -65,10 +65,10 @@ vi.mock("./video-validation", () => ({
 }));
 vi.mock("./queries", () => ({
   claimPhotoForProcessing: vi.fn(),
-  getPhotoForGuest: vi.fn(),
+  getPhotoCompletionStateForGuest: vi.fn(),
   markPhotoReady: vi.fn(),
   rejectPhoto: vi.fn(),
-  renewPhotoProcessingLease: vi.fn(),
+  renewPhotoProcessingLeaseForCompletion: vi.fn(),
   resetPhotoToPending: vi.fn(),
 }));
 
@@ -85,10 +85,10 @@ import {
 import { validateUploadedVideo } from "./video-validation";
 import {
   claimPhotoForProcessing,
-  getPhotoForGuest,
+  getPhotoCompletionStateForGuest,
   markPhotoReady,
   rejectPhoto,
-  renewPhotoProcessingLease,
+  renewPhotoProcessingLeaseForCompletion,
   resetPhotoToPending,
 } from "./queries";
 
@@ -131,7 +131,10 @@ const input = {
 describe("photo completion lease safety", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    vi.mocked(getPhotoForGuest).mockResolvedValue(photo);
+    vi.mocked(getPhotoCompletionStateForGuest).mockResolvedValue({
+      outcome: "available",
+      photo,
+    });
     vi.mocked(claimPhotoForProcessing).mockResolvedValue(photo);
     vi.mocked(readQuarantineObject).mockResolvedValue(Buffer.from("source"));
     vi.mocked(processUploadedImage).mockResolvedValue({
@@ -141,9 +144,12 @@ describe("photo completion lease safety", () => {
       width: 800,
       height: 600,
     });
-    vi.mocked(renewPhotoProcessingLease).mockResolvedValue({
-      ...photo,
-      processingStartedAt: renewedAt,
+    vi.mocked(renewPhotoProcessingLeaseForCompletion).mockResolvedValue({
+      outcome: "available",
+      photo: {
+        ...photo,
+        processingStartedAt: renewedAt,
+      },
     });
     vi.mocked(copyQuarantineObjectToOriginal).mockResolvedValue(undefined);
     vi.mocked(assertOriginalObject).mockResolvedValue(undefined);
@@ -155,9 +161,12 @@ describe("photo completion lease safety", () => {
 
   it("does not delete shared final objects after another worker wins", async () => {
     vi.mocked(markPhotoReady).mockResolvedValue({ outcome: "state-changed" });
-    vi.mocked(getPhotoForGuest)
-      .mockResolvedValueOnce(photo)
-      .mockResolvedValueOnce({ ...photo, processingStartedAt: renewedAt });
+    vi.mocked(getPhotoCompletionStateForGuest)
+      .mockResolvedValueOnce({ outcome: "available", photo })
+      .mockResolvedValueOnce({
+        outcome: "available",
+        photo: { ...photo, processingStartedAt: renewedAt },
+      });
 
     await expect(completePhotoUpload(input)).resolves.toEqual({
       outcome: "processing",
@@ -170,6 +179,108 @@ describe("photo completion lease safety", () => {
       byteSize: photo.declaredByteSize,
     });
     expect(putProcessedObject).toHaveBeenCalledTimes(2);
+    expect(deleteUploadObjects).not.toHaveBeenCalled();
+  });
+
+  it("aborts without permanent writes when deletion starts after validation", async () => {
+    vi.mocked(renewPhotoProcessingLeaseForCompletion).mockResolvedValueOnce({
+      outcome: "unavailable",
+    });
+    vi.mocked(rejectPhoto).mockResolvedValue({
+      ...photo,
+      status: "rejected",
+      processingStartedAt: null,
+    });
+
+    await expect(completePhotoUpload(input)).resolves.toEqual({
+      outcome: "expired",
+    });
+
+    expect(readQuarantineObject).toHaveBeenCalled();
+    expect(processUploadedImage).toHaveBeenCalled();
+    expect(copyQuarantineObjectToOriginal).not.toHaveBeenCalled();
+    expect(putProcessedObject).not.toHaveBeenCalled();
+    expect(markPhotoReady).not.toHaveBeenCalled();
+    expect(rejectPhoto).toHaveBeenCalledWith({
+      photoId: photo.id,
+      galleryId: photo.galleryId,
+      allowedStatuses: ["processing"],
+      processingStartedAt,
+    });
+    expect(deleteUploadObjects).toHaveBeenCalledWith([
+      photo.quarantineObjectKey,
+      photo.originalObjectKey,
+      photo.displayObjectKey,
+      photo.thumbnailObjectKey,
+    ]);
+  });
+
+  it("removes partial permanent assets when deletion starts before mark-ready", async () => {
+    const firstRenewedAt = new Date("2026-07-16T12:00:01.000Z");
+    const secondRenewedAt = new Date("2026-07-16T12:00:02.000Z");
+    const thirdRenewedAt = new Date("2026-07-16T12:00:03.000Z");
+    vi.mocked(renewPhotoProcessingLeaseForCompletion)
+      .mockResolvedValueOnce({
+        outcome: "available",
+        photo: { ...photo, processingStartedAt: firstRenewedAt },
+      })
+      .mockResolvedValueOnce({
+        outcome: "available",
+        photo: { ...photo, processingStartedAt: secondRenewedAt },
+      })
+      .mockResolvedValueOnce({
+        outcome: "available",
+        photo: { ...photo, processingStartedAt: thirdRenewedAt },
+      })
+      .mockResolvedValueOnce({ outcome: "unavailable" });
+    vi.mocked(rejectPhoto).mockResolvedValue({
+      ...photo,
+      status: "rejected",
+      processingStartedAt: null,
+    });
+
+    await expect(completePhotoUpload(input)).resolves.toEqual({
+      outcome: "expired",
+    });
+
+    expect(copyQuarantineObjectToOriginal).toHaveBeenCalledTimes(1);
+    expect(putProcessedObject).toHaveBeenCalledTimes(2);
+    expect(markPhotoReady).not.toHaveBeenCalled();
+    expect(rejectPhoto).toHaveBeenCalledWith({
+      photoId: photo.id,
+      galleryId: photo.galleryId,
+      allowedStatuses: ["processing"],
+      processingStartedAt: thirdRenewedAt,
+    });
+    expect(deleteUploadObjects).toHaveBeenCalledWith([
+      photo.quarantineObjectKey,
+      photo.originalObjectKey,
+      photo.displayObjectKey,
+      photo.thumbnailObjectKey,
+    ]);
+  });
+
+  it("expires completion for delete-pending media without creating ready assets", async () => {
+    const deletingPhoto = {
+      ...photo,
+      status: "delete_pending",
+      deletionRequestedAt: new Date("2026-07-16T12:00:00.000Z"),
+      deletionAccountedAt: new Date("2026-07-16T12:00:00.000Z"),
+    } as Photo;
+    vi.mocked(getPhotoCompletionStateForGuest).mockResolvedValueOnce({
+      outcome: "unavailable",
+      photo: deletingPhoto,
+    });
+
+    await expect(completePhotoUpload(input)).resolves.toEqual({
+      outcome: "expired",
+    });
+
+    expect(claimPhotoForProcessing).not.toHaveBeenCalled();
+    expect(readQuarantineObject).not.toHaveBeenCalled();
+    expect(copyQuarantineObjectToOriginal).not.toHaveBeenCalled();
+    expect(putProcessedObject).not.toHaveBeenCalled();
+    expect(markPhotoReady).not.toHaveBeenCalled();
     expect(deleteUploadObjects).not.toHaveBeenCalled();
   });
 
@@ -207,7 +318,10 @@ describe("photo completion lease safety", () => {
       ...photo,
       originalObjectKey: null,
     } as unknown as Photo;
-    vi.mocked(getPhotoForGuest).mockResolvedValue(incompletePhoto);
+    vi.mocked(getPhotoCompletionStateForGuest).mockResolvedValue({
+      outcome: "available",
+      photo: incompletePhoto,
+    });
     vi.mocked(claimPhotoForProcessing).mockResolvedValue(incompletePhoto);
     vi.mocked(rejectPhoto).mockResolvedValue(incompletePhoto);
 
@@ -232,11 +346,17 @@ describe("photo completion lease safety", () => {
       width: null,
       height: null,
     } as Photo;
-    vi.mocked(getPhotoForGuest).mockResolvedValue(videoPhoto);
+    vi.mocked(getPhotoCompletionStateForGuest).mockResolvedValue({
+      outcome: "available",
+      photo: videoPhoto,
+    });
     vi.mocked(claimPhotoForProcessing).mockResolvedValue(videoPhoto);
-    vi.mocked(renewPhotoProcessingLease).mockResolvedValue({
-      ...videoPhoto,
-      processingStartedAt: renewedAt,
+    vi.mocked(renewPhotoProcessingLeaseForCompletion).mockResolvedValue({
+      outcome: "available",
+      photo: {
+        ...videoPhoto,
+        processingStartedAt: renewedAt,
+      },
     });
     vi.mocked(markPhotoReady).mockResolvedValue({
       outcome: "ready",

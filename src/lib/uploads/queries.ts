@@ -64,6 +64,16 @@ export type MarkPhotoReadyResult =
   | { outcome: "quota-exceeded" }
   | { outcome: "state-changed" };
 
+export type PhotoCompletionState =
+  | { outcome: "available"; photo: Photo }
+  | { outcome: "unavailable"; photo: Photo }
+  | { outcome: "not-found" };
+
+export type PhotoProcessingLeaseRenewalResult =
+  | { outcome: "available"; photo: Photo }
+  | { outcome: "unavailable" }
+  | { outcome: "state-changed" };
+
 export type MediaDeletionFailureInput = {
   photoId: string;
   galleryId: string;
@@ -229,6 +239,23 @@ export async function reservePhotoUpload({
           return { outcome: "idempotency-conflict" };
         }
 
+        const [availableGallery] = await tx
+          .select({ id: galleries.id })
+          .from(galleries)
+          .where(
+            and(
+              eq(galleries.id, galleryId),
+              eq(galleries.slug, input.slug),
+              eq(galleries.accessVersion, accessVersion),
+              eq(galleries.status, "open"),
+            ),
+          )
+          .limit(1);
+
+        if (!availableGallery) {
+          throw new ReservationUnavailableError("unavailable");
+        }
+
         return { outcome: "existing", photo: existing };
       }
 
@@ -289,19 +316,59 @@ export async function getUploadReservationForGuest({
   uploaderSessionHash: string;
   idempotencyKey: string;
 }): Promise<Photo | null> {
-  const [photo] = await db
-    .select()
+  const [row] = await db
+    .select({ photo: photos })
     .from(photos)
+    .innerJoin(galleries, eq(photos.galleryId, galleries.id))
     .where(
       and(
         eq(photos.galleryId, galleryId),
         eq(photos.uploaderSessionHash, uploaderSessionHash),
         eq(photos.idempotencyKey, idempotencyKey),
+        eq(galleries.id, galleryId),
+        eq(galleries.status, "open"),
       ),
     )
     .limit(1);
 
-  return photo ?? null;
+  return row?.photo ?? null;
+}
+
+export async function getPhotoCompletionStateForGuest({
+  photoId,
+  galleryId,
+  uploaderSessionHash,
+}: {
+  photoId: string;
+  galleryId: string;
+  uploaderSessionHash: string;
+}): Promise<PhotoCompletionState> {
+  const [row] = await db
+    .select({ photo: photos, galleryStatus: galleries.status })
+    .from(photos)
+    .innerJoin(galleries, eq(photos.galleryId, galleries.id))
+    .where(
+      and(
+        eq(photos.id, photoId),
+        eq(photos.galleryId, galleryId),
+        eq(photos.uploaderSessionHash, uploaderSessionHash),
+        eq(galleries.id, galleryId),
+      ),
+    )
+    .limit(1);
+
+  if (!row) {
+    return { outcome: "not-found" };
+  }
+
+  if (
+    !isGalleryUploadCompletionAccessible(row.galleryStatus) ||
+    isPhotoTerminalForUploadCompletion(row.photo.status)
+  ) {
+    return { outcome: "unavailable", photo: row.photo };
+  }
+
+  return { outcome: "available", photo: row.photo };
 }
 
 export async function getPhotoForGuest({
@@ -562,8 +629,8 @@ export async function claimReadyMediaDeletionForOwner({
     await tx
       .update(galleries)
       .set({
-        photoCount: sql`${galleries.photoCount} - 1`,
-        storageBytes: sql`${galleries.storageBytes} - ${deletedStorageBytes}`,
+        photoCount: sql`greatest(${galleries.photoCount} - 1, 0)`,
+        storageBytes: sql`greatest(${galleries.storageBytes} - ${deletedStorageBytes}, 0)`,
         updatedAt: now,
       })
       .where(
@@ -696,6 +763,7 @@ export async function claimPhotoForProcessing({
         eq(photos.uploaderSessionHash, uploaderSessionHash),
         sql`${photos.reservationExpiresAt} > ${now.toISOString()}::timestamptz`,
         sql`${photos.completionAttempts} < ${MAX_COMPLETION_ATTEMPTS}`,
+        galleryAllowsUploadCompletionPredicate(),
         or(
           and(
             eq(photos.status, "pending"),
@@ -720,6 +788,62 @@ export async function claimPhotoForProcessing({
     .returning();
 
   return photo ?? null;
+}
+
+export async function renewPhotoProcessingLeaseForCompletion({
+  photoId,
+  galleryId,
+  processingStartedAt,
+  now = new Date(),
+}: {
+  photoId: string;
+  galleryId: string;
+  processingStartedAt: Date;
+  now?: Date;
+}): Promise<PhotoProcessingLeaseRenewalResult> {
+  const [photo] = await db
+    .update(photos)
+    .set({ processingStartedAt: now })
+    .where(
+      and(
+        eq(photos.id, photoId),
+        eq(photos.galleryId, galleryId),
+        eq(photos.status, "processing"),
+        eq(photos.processingStartedAt, processingStartedAt),
+        galleryAllowsUploadCompletionPredicate(),
+      ),
+    )
+    .returning();
+
+  if (photo) {
+    return { outcome: "available", photo };
+  }
+
+  const [current] = await db
+    .select({ photoStatus: photos.status, galleryStatus: galleries.status })
+    .from(photos)
+    .innerJoin(galleries, eq(photos.galleryId, galleries.id))
+    .where(
+      and(
+        eq(photos.id, photoId),
+        eq(photos.galleryId, galleryId),
+        eq(galleries.id, galleryId),
+      ),
+    )
+    .limit(1);
+
+  if (!current) {
+    return { outcome: "unavailable" };
+  }
+
+  if (
+    !isGalleryUploadCompletionAccessible(current.galleryStatus) ||
+    isPhotoTerminalForUploadCompletion(current.photoStatus)
+  ) {
+    return { outcome: "unavailable" };
+  }
+
+  return { outcome: "state-changed" };
 }
 
 export async function renewPhotoProcessingLease({
@@ -800,15 +924,17 @@ export async function markPhotoReady({
         .update(galleries)
         .set({
           photoCount: sql`${galleries.photoCount} + 1`,
-          reservedPhotoCount: sql`${galleries.reservedPhotoCount} - 1`,
+          reservedPhotoCount: sql`greatest(${galleries.reservedPhotoCount} - 1, 0)`,
           storageBytes: sql`${galleries.storageBytes} + ${finalByteSize}`,
-          reservedBytes: sql`${galleries.reservedBytes} - ${photo.declaredByteSize}`,
+          reservedBytes: sql`greatest(${galleries.reservedBytes} - ${photo.declaredByteSize}, 0)`,
           updatedAt: now,
         })
         .where(
           and(
             eq(galleries.id, galleryId),
             inArray(galleries.status, [...GUEST_ACCESSIBLE_GALLERY_STATUSES]),
+            sql`${galleries.reservedPhotoCount} > 0`,
+            sql`${galleries.reservedBytes} >= ${photo.declaredByteSize}`,
             sql`${galleries.storageBytes} + ${galleries.reservedBytes} - ${photo.declaredByteSize} + ${finalByteSize} <= ${MAX_GALLERY_STORAGE_BYTES}`,
           ),
         )
@@ -882,8 +1008,8 @@ export async function rejectPhoto({
     await tx
       .update(galleries)
       .set({
-        reservedPhotoCount: sql`${galleries.reservedPhotoCount} - 1`,
-        reservedBytes: sql`${galleries.reservedBytes} - ${photo.declaredByteSize}`,
+        reservedPhotoCount: sql`greatest(${galleries.reservedPhotoCount} - 1, 0)`,
+        reservedBytes: sql`greatest(${galleries.reservedBytes} - ${photo.declaredByteSize}, 0)`,
         updatedAt: now,
       })
       .where(eq(galleries.id, galleryId));
@@ -968,6 +1094,11 @@ export async function listPhotosAwaitingQuarantineCleanup({
         lte(photos.reservationExpiresAt, cleanupBefore),
       ),
     )
+    .orderBy(
+      desc(photos.reservationExpiresAt),
+      desc(photos.createdAt),
+      desc(photos.id),
+    )
     .limit(limit);
 }
 
@@ -996,6 +1127,11 @@ export async function claimExpiredUploadReservations({
             lte(photos.processingStartedAt, leaseBefore),
           ),
         ),
+      )
+      .orderBy(
+        desc(photos.reservationExpiresAt),
+        desc(photos.createdAt),
+        desc(photos.id),
       )
       .limit(limit)
       .for("update", { skipLocked: true });
@@ -1067,7 +1203,6 @@ export async function rejectClaimedExpiredUpload({
         rejectedAt: now,
         processingStartedAt: null,
         nextProcessingAttemptAt: null,
-        quarantineDeletedAt: now,
       })
       .where(
         and(
@@ -1086,12 +1221,30 @@ export async function rejectClaimedExpiredUpload({
     await tx
       .update(galleries)
       .set({
-        reservedPhotoCount: sql`${galleries.reservedPhotoCount} - 1`,
-        reservedBytes: sql`${galleries.reservedBytes} - ${photo.declaredByteSize}`,
+        reservedPhotoCount: sql`greatest(${galleries.reservedPhotoCount} - 1, 0)`,
+        reservedBytes: sql`greatest(${galleries.reservedBytes} - ${photo.declaredByteSize}, 0)`,
         updatedAt: now,
       })
       .where(eq(galleries.id, galleryId));
 
     return photo;
   });
+}
+
+function isGalleryUploadCompletionAccessible(status: (typeof galleries.$inferSelect)["status"]) {
+  return GUEST_ACCESSIBLE_GALLERY_STATUSES.includes(
+    status as (typeof GUEST_ACCESSIBLE_GALLERY_STATUSES)[number],
+  );
+}
+
+function isPhotoTerminalForUploadCompletion(status: Photo["status"]) {
+  return (
+    status === "rejected" ||
+    status === "deleting" ||
+    status === "delete_pending"
+  );
+}
+
+function galleryAllowsUploadCompletionPredicate() {
+  return sql`exists (select 1 from ${galleries} where ${galleries.id} = ${photos.galleryId} and ${galleries.status} in ('open', 'closed'))`;
 }

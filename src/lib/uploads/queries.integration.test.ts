@@ -857,10 +857,27 @@ describe("photo upload reservations", () => {
         },
         ...createReservationIdentity(),
       });
+      const pendingBeforeDeleting = await uploadQueries.reservePhotoUpload({
+        galleryId: deletingGallery.id,
+        accessVersion: deletingGallery.accessVersion,
+        uploaderSessionHash: sessionHash,
+        input: {
+          slug: deletingGallery.slug,
+          idempotencyKey: randomUUID(),
+          mimeType: "image/jpeg",
+          byteSize,
+          originalFilename: "pending-before-deleting.jpg",
+        },
+        ...createReservationIdentity(),
+      });
 
       try {
         expect(reservedBeforeDeleting.outcome).toBe("reserved");
-        if (reservedBeforeDeleting.outcome !== "reserved") {
+        expect(pendingBeforeDeleting.outcome).toBe("reserved");
+        if (
+          reservedBeforeDeleting.outcome !== "reserved" ||
+          pendingBeforeDeleting.outcome !== "reserved"
+        ) {
           throw new Error("Deleting lifecycle reservation was not created.");
         }
 
@@ -892,6 +909,23 @@ describe("photo upload reservations", () => {
           }),
         ).resolves.toEqual({ outcome: "unavailable" });
         await expect(
+          uploadQueries.claimPhotoForProcessing({
+            photoId: pendingBeforeDeleting.photo.id,
+            galleryId: deletingGallery.id,
+            uploaderSessionHash: sessionHash,
+          }),
+        ).resolves.toBeNull();
+        await expect(
+          uploadQueries.getPhotoCompletionStateForGuest({
+            photoId: pendingBeforeDeleting.photo.id,
+            galleryId: deletingGallery.id,
+            uploaderSessionHash: sessionHash,
+          }),
+        ).resolves.toMatchObject({
+          outcome: "unavailable",
+          photo: { id: pendingBeforeDeleting.photo.id, status: "pending" },
+        });
+        await expect(
           uploadQueries.markPhotoReady({
             photoId: reservedBeforeDeleting.photo.id,
             galleryId: deletingGallery.id,
@@ -904,6 +938,93 @@ describe("photo upload reservations", () => {
         ).resolves.toEqual({ outcome: "unavailable" });
       } finally {
         await db.delete(galleries).where(eq(galleries.id, deletingGallery.id));
+      }
+    },
+    15_000,
+  );
+
+  it(
+    "does not underflow or resurrect accounting after an upload is deletion-expired",
+    async () => {
+      const gallery = await galleryQueries.createGalleryForOwner(owner, {
+        name: `Upload No Underflow ${randomUUID()}`,
+        eventDate: undefined,
+      });
+      const reservation = await uploadQueries.reservePhotoUpload({
+        galleryId: gallery.id,
+        accessVersion: gallery.accessVersion,
+        uploaderSessionHash: sessionHash,
+        input: {
+          slug: gallery.slug,
+          idempotencyKey: randomUUID(),
+          mimeType: "image/jpeg",
+          byteSize,
+          originalFilename: "no-underflow.jpg",
+        },
+        ...createReservationIdentity(),
+      });
+
+      try {
+        expect(reservation.outcome).toBe("reserved");
+        if (reservation.outcome !== "reserved") {
+          throw new Error("Underflow reservation was not created.");
+        }
+
+        const claim = await uploadQueries.claimPhotoForProcessing({
+          photoId: reservation.photo.id,
+          galleryId: gallery.id,
+          uploaderSessionHash: sessionHash,
+        });
+        expect(claim?.processingStartedAt).toBeInstanceOf(Date);
+
+        await db
+          .update(galleries)
+          .set({ reservedPhotoCount: 0, reservedBytes: 0 })
+          .where(eq(galleries.id, gallery.id));
+
+        await expect(
+          uploadQueries.rejectPhoto({
+            photoId: reservation.photo.id,
+            galleryId: gallery.id,
+            allowedStatuses: ["processing"],
+            processingStartedAt: claim!.processingStartedAt!,
+          }),
+        ).resolves.toMatchObject({ id: reservation.photo.id, status: "rejected" });
+        await expect(
+          uploadQueries.markPhotoReady({
+            photoId: reservation.photo.id,
+            galleryId: gallery.id,
+            processingStartedAt: claim!.processingStartedAt!,
+            finalByteSize: byteSize,
+            mimeType: "image/jpeg",
+            width: 800,
+            height: 600,
+          }),
+        ).resolves.toEqual({ outcome: "state-changed" });
+
+        const [updatedGallery] = await db
+          .select({
+            photoCount: galleries.photoCount,
+            reservedPhotoCount: galleries.reservedPhotoCount,
+            storageBytes: galleries.storageBytes,
+            reservedBytes: galleries.reservedBytes,
+          })
+          .from(galleries)
+          .where(eq(galleries.id, gallery.id));
+        const [updatedPhoto] = await db
+          .select({ status: photos.status, readyAt: photos.readyAt })
+          .from(photos)
+          .where(eq(photos.id, reservation.photo.id));
+
+        expect(updatedGallery).toEqual({
+          photoCount: 0,
+          reservedPhotoCount: 0,
+          storageBytes: 0,
+          reservedBytes: 0,
+        });
+        expect(updatedPhoto).toEqual({ status: "rejected", readyAt: null });
+      } finally {
+        await db.delete(galleries).where(eq(galleries.id, gallery.id));
       }
     },
     15_000,

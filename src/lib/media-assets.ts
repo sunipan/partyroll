@@ -351,7 +351,7 @@ async function getMediaAssetForGuestFromDatabase(input: GuestMediaAssetQuery) {
 }
 
 async function getMediaAssetForOwnerFromDatabase(input: AdminMediaAssetQuery) {
-  const [{ and, eq }, { db }, { galleries, photos }] = await Promise.all([
+  const [{ and, eq, inArray }, { db }, { galleries, photos }] = await Promise.all([
     import("drizzle-orm"),
     import("@/db"),
     import("@/db/schema"),
@@ -367,6 +367,7 @@ async function getMediaAssetForOwnerFromDatabase(input: AdminMediaAssetQuery) {
         eq(photos.status, "ready"),
         eq(galleries.id, input.galleryId),
         eq(galleries.ownerClerkId, input.ownerClerkId),
+        inArray(galleries.status, ["open", "closed", "archived"]),
       ),
     )
     .limit(1);

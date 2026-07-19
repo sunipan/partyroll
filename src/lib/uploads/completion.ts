@@ -16,10 +16,10 @@ import {
 } from "./objects";
 import {
   claimPhotoForProcessing,
-  getPhotoForGuest,
+  getPhotoCompletionStateForGuest,
   markPhotoReady,
   rejectPhoto,
-  renewPhotoProcessingLease,
+  renewPhotoProcessingLeaseForCompletion,
   resetPhotoToPending,
 } from "./queries";
 import {
@@ -53,23 +53,22 @@ export async function completePhotoUpload({
   galleryId: string;
   uploaderSessionHash: string;
 }): Promise<CompletePhotoResult> {
-  const existing = await getPhotoForGuest({
+  const existingState = await getPhotoCompletionStateForGuest({
     photoId,
     galleryId,
     uploaderSessionHash,
   });
-  if (!existing) {
+  if (existingState.outcome === "not-found") {
     return { outcome: "not-found" };
   }
+  if (existingState.outcome === "unavailable") {
+    await expireUnavailableUpload(existingState.photo).catch(() => undefined);
+    return { outcome: "expired" };
+  }
+  const existing = existingState.photo;
+
   if (existing.status === "ready") {
     return { outcome: "ready", photo: existing };
-  }
-  if (
-    existing.status === "rejected" ||
-    existing.status === "deleting" ||
-    existing.status === "delete_pending"
-  ) {
-    return { outcome: "expired" };
   }
   const now = new Date();
   if (existing.reservationExpiresAt <= now) {
@@ -87,14 +86,20 @@ export async function completePhotoUpload({
     uploaderSessionHash,
   });
   if (!photo) {
-    const current = await getPhotoForGuest({
+    const currentState = await getPhotoCompletionStateForGuest({
       photoId,
       galleryId,
       uploaderSessionHash,
     });
-    if (!current) {
+
+    if (currentState.outcome === "not-found") {
       return { outcome: "not-found" };
     }
+    if (currentState.outcome === "unavailable") {
+      await expireUnavailableUpload(currentState.photo).catch(() => undefined);
+      return { outcome: "expired" };
+    }
+    const current = currentState.photo;
 
     const currentTime = new Date();
     const processingLeaseExpired =
@@ -182,6 +187,15 @@ export async function completePhotoUpload({
       );
       const processed = await processUploadedImage(source);
 
+      const beforeOriginal = await renewCompletionReadiness({
+        photo,
+        processingStartedAt,
+      });
+      if (beforeOriginal.outcome !== "available") {
+        return { outcome: beforeOriginal.outcome };
+      }
+      processingStartedAt = beforeOriginal.processingStartedAt;
+
       await copyQuarantineObjectToOriginal({
         quarantineObjectKey: photo.quarantineObjectKey,
         originalObjectKey,
@@ -194,24 +208,43 @@ export async function completePhotoUpload({
         expectedMimeType: photo.declaredMimeType,
       });
 
-      const renewed = await renewPhotoProcessingLease({
-        photoId,
-        galleryId,
+      const beforeDisplay = await renewCompletionReadiness({
+        photo,
         processingStartedAt,
       });
-      if (!renewed?.processingStartedAt) {
-        return { outcome: "processing" };
+      if (beforeDisplay.outcome !== "available") {
+        return { outcome: beforeDisplay.outcome };
       }
-      processingStartedAt = renewed.processingStartedAt;
+      processingStartedAt = beforeDisplay.processingStartedAt;
 
       await putProcessedObject({
         objectKey: displayObjectKey,
         body: processed.display,
       });
+
+      const beforeThumbnail = await renewCompletionReadiness({
+        photo,
+        processingStartedAt,
+      });
+      if (beforeThumbnail.outcome !== "available") {
+        return { outcome: beforeThumbnail.outcome };
+      }
+      processingStartedAt = beforeThumbnail.processingStartedAt;
+
       await putProcessedObject({
         objectKey: thumbnailObjectKey,
         body: processed.thumbnail,
       });
+
+      const beforeReady = await renewCompletionReadiness({
+        photo,
+        processingStartedAt,
+      });
+      if (beforeReady.outcome !== "available") {
+        return { outcome: beforeReady.outcome };
+      }
+      processingStartedAt = beforeReady.processingStartedAt;
+
       readyInput = {
         finalByteSize: photo.declaredByteSize + processed.totalByteSize,
         mimeType: photo.declaredMimeType,
@@ -241,6 +274,15 @@ export async function completePhotoUpload({
         mimeType: photo.declaredMimeType,
         byteSize: photo.declaredByteSize,
       });
+      const beforeOriginal = await renewCompletionReadiness({
+        photo,
+        processingStartedAt,
+      });
+      if (beforeOriginal.outcome !== "available") {
+        return { outcome: beforeOriginal.outcome };
+      }
+      processingStartedAt = beforeOriginal.processingStartedAt;
+
       await copyQuarantineObjectToOriginal({
         quarantineObjectKey: photo.quarantineObjectKey,
         originalObjectKey,
@@ -253,15 +295,14 @@ export async function completePhotoUpload({
         expectedMimeType: photo.declaredMimeType,
       });
 
-      const renewed = await renewPhotoProcessingLease({
-        photoId,
-        galleryId,
+      const beforeReady = await renewCompletionReadiness({
+        photo,
         processingStartedAt,
       });
-      if (!renewed?.processingStartedAt) {
-        return { outcome: "processing" };
+      if (beforeReady.outcome !== "available") {
+        return { outcome: beforeReady.outcome };
       }
-      processingStartedAt = renewed.processingStartedAt;
+      processingStartedAt = beforeReady.processingStartedAt;
       readyInput = {
         finalByteSize: photo.declaredByteSize,
         mimeType: photo.declaredMimeType,
@@ -284,7 +325,7 @@ export async function completePhotoUpload({
         processingStartedAt,
       });
       if (rejected) {
-        await deletePreReadyObjects(photo).catch(() => undefined);
+        await deleteAllUploadObjects(photo).catch(() => undefined);
       }
       return { outcome: "expired" };
     }
@@ -296,16 +337,26 @@ export async function completePhotoUpload({
         processingStartedAt,
       });
       if (rejected) {
-        await deletePreReadyObjects(photo).catch(() => undefined);
+        await deleteAllUploadObjects(photo).catch(() => undefined);
       }
       return { outcome: "quota-exceeded" };
     }
     if (readyResult.outcome === "state-changed") {
-      const current = await getPhotoForGuest({
+      const currentState = await getPhotoCompletionStateForGuest({
         photoId,
         galleryId,
         uploaderSessionHash,
       });
+      if (currentState.outcome === "not-found") {
+        return { outcome: "not-found" };
+      }
+      if (currentState.outcome === "unavailable") {
+        await abortUnavailableProcessing(photo, processingStartedAt).catch(
+          () => undefined,
+        );
+        return { outcome: "expired" };
+      }
+      const current = currentState.photo;
       if (current?.status === "ready") {
         return { outcome: "ready", photo: current };
       }
@@ -330,13 +381,12 @@ export async function completePhotoUpload({
       return { outcome: "invalid" };
     }
 
-    const renewed = await renewPhotoProcessingLease({
-      photoId,
-      galleryId,
+    const renewed = await renewCompletionReadiness({
+      photo,
       processingStartedAt,
     });
-    if (!renewed?.processingStartedAt) {
-      return { outcome: "processing" };
+    if (renewed.outcome !== "available") {
+      return { outcome: renewed.outcome };
     }
     processingStartedAt = renewed.processingStartedAt;
 
@@ -350,6 +400,74 @@ export async function completePhotoUpload({
   }
 }
 
+async function renewCompletionReadiness({
+  photo,
+  processingStartedAt,
+}: {
+  photo: Photo;
+  processingStartedAt: Date;
+}): Promise<
+  | { outcome: "available"; processingStartedAt: Date }
+  | { outcome: "expired" }
+  | { outcome: "processing" }
+> {
+  const renewed = await renewPhotoProcessingLeaseForCompletion({
+    photoId: photo.id,
+    galleryId: photo.galleryId,
+    processingStartedAt,
+  });
+
+  if (renewed.outcome === "available" && renewed.photo.processingStartedAt) {
+    return {
+      outcome: "available",
+      processingStartedAt: renewed.photo.processingStartedAt,
+    };
+  }
+  if (renewed.outcome === "unavailable") {
+    await abortUnavailableProcessing(photo, processingStartedAt).catch(
+      () => undefined,
+    );
+    return { outcome: "expired" };
+  }
+
+  return { outcome: "processing" };
+}
+
+async function expireUnavailableUpload(photo: Photo) {
+  if (photo.status !== "pending" && photo.status !== "processing") {
+    return;
+  }
+
+  await abortUnavailableProcessing(
+    photo,
+    photo.status === "processing"
+      ? (photo.processingStartedAt ?? undefined)
+      : undefined,
+  );
+}
+
+async function abortUnavailableProcessing(
+  photo: Photo,
+  processingStartedAt?: Date,
+) {
+  if (photo.status === "pending") {
+    await rejectPhoto({
+      photoId: photo.id,
+      galleryId: photo.galleryId,
+      allowedStatuses: ["pending"],
+    }).catch(() => undefined);
+  } else {
+    await rejectPhoto({
+      photoId: photo.id,
+      galleryId: photo.galleryId,
+      allowedStatuses: ["processing"],
+      processingStartedAt,
+    }).catch(() => undefined);
+  }
+
+  await deleteAllUploadObjects(photo).catch(() => undefined);
+}
+
 function getPreReadyObjectKeys(photo: Photo) {
   return getFinalUploadObjectKeys({
     id: photo.id,
@@ -361,8 +479,16 @@ function getPreReadyObjectKeys(photo: Photo) {
   });
 }
 
+function getAllUploadObjectKeys(photo: Photo) {
+  return [photo.quarantineObjectKey, ...getPreReadyObjectKeys(photo)];
+}
+
 async function deletePreReadyObjects(photo: Photo) {
   await deleteUploadObjects(getPreReadyObjectKeys(photo));
+}
+
+async function deleteAllUploadObjects(photo: Photo) {
+  await deleteUploadObjects(getAllUploadObjectKeys(photo));
 }
 
 function requireObjectKey(value: string | null, label: string) {

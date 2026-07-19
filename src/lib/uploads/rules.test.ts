@@ -43,8 +43,8 @@ describe("upload rules", () => {
     ).toBe(true);
   });
 
-  it("recognizes the explicit retryable media deletion status", () => {
-    expect(photoStatusSchema.safeParse("delete_pending").success).toBe(true);
+  it("recognizes upload cleanup states", () => {
+    expect(photoStatusSchema.safeParse("deleting").success).toBe(true);
     expect(photoStatusSchema.safeParse("deleted").success).toBe(false);
   });
 

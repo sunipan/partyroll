@@ -260,12 +260,10 @@ describe("photo completion lease safety", () => {
     ]);
   });
 
-  it("expires completion for delete-pending media without creating ready assets", async () => {
+  it("expires completion for deleting media without creating ready assets", async () => {
     const deletingPhoto = {
       ...photo,
-      status: "delete_pending",
-      deletionRequestedAt: new Date("2026-07-16T12:00:00.000Z"),
-      deletionAccountedAt: new Date("2026-07-16T12:00:00.000Z"),
+      status: "deleting",
     } as Photo;
     vi.mocked(getPhotoCompletionStateForGuest).mockResolvedValueOnce({
       outcome: "unavailable",

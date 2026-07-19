@@ -16,10 +16,7 @@ import {
   galleryIdSchema,
   galleryStatusSchema,
 } from "@/lib/galleries/rules";
-import {
-  deleteReadyMediaForOwner,
-  retryPendingMediaDeletionForOwner,
-} from "@/lib/uploads/media";
+import { deleteReadyMediaForOwner } from "@/lib/uploads/media";
 
 export async function createGalleryAction(
   _previousState: CreateGalleryFormState,
@@ -114,6 +111,7 @@ export async function regenerateGalleryAccessAction(formData: FormData) {
 const deleteMediaSchema = z.object({
   galleryId: galleryIdSchema,
   photoId: z.uuid(),
+  cursor: z.string().max(512).optional(),
 });
 
 export async function deleteGalleryMediaAction(formData: FormData) {
@@ -121,6 +119,7 @@ export async function deleteGalleryMediaAction(formData: FormData) {
   const input = deleteMediaSchema.safeParse({
     galleryId: formData.get("galleryId"),
     photoId: formData.get("photoId"),
+    cursor: optionalFormString(formData.get("cursor")),
   });
 
   if (!input.success) {
@@ -137,31 +136,28 @@ export async function deleteGalleryMediaAction(formData: FormData) {
     redirect(`/admin/galleries/${input.data.galleryId}`);
   }
 
+  if (result.outcome === "retryable-error") {
+    redirect(getMediaDeletionRetryPath(input.data));
+  }
+
   revalidatePath("/admin");
   revalidatePath(`/admin/galleries/${input.data.galleryId}`);
 }
 
-export async function retryGalleryMediaDeletionAction(formData: FormData) {
-  const { userId } = await requireAdmin();
-  const input = deleteMediaSchema.safeParse({
-    galleryId: formData.get("galleryId"),
-    photoId: formData.get("photoId"),
-  });
+function optionalFormString(value: FormDataEntryValue | null) {
+  return typeof value === "string" && value.length > 0 ? value : undefined;
+}
 
-  if (!input.success) {
-    redirect("/admin");
-  }
-
-  const result = await retryPendingMediaDeletionForOwner({
-    ownerClerkId: userId,
-    galleryId: input.data.galleryId,
-    photoId: input.data.photoId,
-  });
-
-  if (result.outcome === "not-found") {
-    redirect(`/admin/galleries/${input.data.galleryId}`);
-  }
-
-  revalidatePath("/admin");
-  revalidatePath(`/admin/galleries/${input.data.galleryId}`);
+function getMediaDeletionRetryPath({
+  galleryId,
+  photoId,
+  cursor,
+}: {
+  galleryId: string;
+  photoId: string;
+  cursor?: string;
+}) {
+  const params = new URLSearchParams({ deleteError: photoId });
+  if (cursor) params.set("cursor", cursor);
+  return `/admin/galleries/${galleryId}?${params.toString()}`;
 }

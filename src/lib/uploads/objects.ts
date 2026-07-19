@@ -397,7 +397,11 @@ export async function deleteUploadObjects(objectKeys: string[]) {
     ),
   );
 
-  if (result.Errors?.length) {
+  const retryableErrors = (result.Errors ?? []).filter(
+    (error) => error.Code !== "NoSuchKey" && error.Code !== "NotFound",
+  );
+
+  if (retryableErrors.length > 0) {
     throw new Error("One or more R2 objects could not be deleted.");
   }
 }

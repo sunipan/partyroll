@@ -24,7 +24,6 @@ let deletingGallery: Awaited<ReturnType<typeof galleryQueries.createGalleryForOw
 const readyImageId = randomUUID();
 const readyVideoId = randomUUID();
 const pendingImageId = randomUUID();
-const deletePendingImageId = randomUUID();
 const otherGalleryImageId = randomUUID();
 const otherOwnerImageId = randomUUID();
 const archivedImageId = randomUUID();
@@ -85,7 +84,6 @@ describe("authorized media asset DB lookups", () => {
       photoFixture({ id: readyImageId, galleryId: mainGallery.id, kind: "image" }),
       photoFixture({ id: readyVideoId, galleryId: mainGallery.id, kind: "video" }),
       photoFixture({ id: pendingImageId, galleryId: mainGallery.id, kind: "image", status: "pending" }),
-      photoFixture({ id: deletePendingImageId, galleryId: mainGallery.id, kind: "image", status: "delete_pending" }),
       photoFixture({ id: otherGalleryImageId, galleryId: otherGallery.id, kind: "image" }),
       photoFixture({ id: otherOwnerImageId, galleryId: otherOwnerGallery.id, kind: "image" }),
       photoFixture({ id: archivedImageId, galleryId: archivedGallery.id, kind: "image" }),
@@ -117,7 +115,6 @@ describe("authorized media asset DB lookups", () => {
       { galleryId: archivedGallery.id, slug: archivedGallery.slug, mediaId: archivedImageId, variant: "display" as const },
       { galleryId: deletingGallery.id, slug: deletingGallery.slug, mediaId: deletingGalleryImageId, variant: "display" as const },
       { mediaId: pendingImageId, variant: "display" as const },
-      { mediaId: deletePendingImageId, variant: "display" as const },
       { mediaId: randomUUID(), variant: "display" as const },
       { mediaId: readyImageId, variant: "video" as const },
       { mediaId: readyVideoId, variant: "thumbnail" as const },
@@ -158,7 +155,6 @@ describe("authorized media asset DB lookups", () => {
       { ownerClerkId: otherOwner, galleryId: mainGallery.id, mediaId: readyImageId, variant: "display" as const },
       { ownerClerkId: owner, galleryId: mainGallery.id, mediaId: otherGalleryImageId, variant: "display" as const },
       { ownerClerkId: owner, galleryId: mainGallery.id, mediaId: pendingImageId, variant: "display" as const },
-      { ownerClerkId: owner, galleryId: mainGallery.id, mediaId: deletePendingImageId, variant: "display" as const },
       { ownerClerkId: owner, galleryId: deletingGallery.id, mediaId: deletingGalleryImageId, variant: "display" as const },
       { ownerClerkId: owner, galleryId: mainGallery.id, mediaId: randomUUID(), variant: "display" as const },
       { ownerClerkId: owner, galleryId: mainGallery.id, mediaId: readyVideoId, variant: "thumbnail" as const },
@@ -174,12 +170,10 @@ function photoFixture(input: {
   id: string;
   galleryId: string;
   kind: "image" | "video";
-  status?: "ready" | "pending" | "delete_pending";
+  status?: "ready" | "pending";
 }) {
   const final = input.status !== "pending";
   const video = input.kind === "video";
-  const deletionRequestedAt =
-    input.status === "delete_pending" ? new Date() : null;
   return {
     id: input.id,
     galleryId: input.galleryId,
@@ -200,7 +194,5 @@ function photoFixture(input: {
     height: final && !video ? 600 : null,
     reservationExpiresAt: new Date(Date.now() + 15 * 60 * 1000),
     readyAt: final ? new Date() : null,
-    deletionRequestedAt,
-    deletionAccountedAt: deletionRequestedAt,
   };
 }

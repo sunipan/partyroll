@@ -34,7 +34,6 @@ export const photoStatusSchema = z.enum([
   "ready",
   "rejected",
   "deleting",
-  "delete_pending",
 ]);
 export type PhotoStatus = z.infer<typeof photoStatusSchema>;
 

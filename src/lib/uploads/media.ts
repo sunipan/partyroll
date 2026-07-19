@@ -11,14 +11,10 @@ import type { ReadyMediaPage } from "./ready-media-pagination";
 
 import { deleteUploadObjects, getMediaDeletionObjectKeys } from "./objects";
 import {
-  claimReadyMediaDeletionForOwner,
-  deletePendingMediaRecord,
-  listDeletePendingMediaForOwner,
-  getRetryableDeletePendingMediaForOwner,
+  deleteReadyMediaRecordForOwner,
+  getReadyPhotoForOwner,
   listReadyMediaForGuest,
   listReadyMediaForOwner,
-  recordMediaDeletionFailure,
-  type DeletePendingMedia,
   type ReadyMedia,
 } from "./queries";
 
@@ -60,29 +56,8 @@ export type ReadyMediaView =
 
 export type DeleteReadyMediaResult =
   | { outcome: "deleted"; media: Photo }
-  | { outcome: "retry-pending"; media: Photo }
+  | { outcome: "retryable-error"; media: Photo; message: string }
   | { outcome: "not-found" };
-
-export type RetryPendingMediaDeletionResult = DeleteReadyMediaResult;
-
-export type DeletePendingMediaView = Pick<
-  DeletePendingMedia,
-  | "id"
-  | "galleryId"
-  | "originalFilename"
-  | "mediaKind"
-  | "declaredByteSize"
-  | "byteSize"
-  | "createdAt"
-  | "readyAt"
-  | "deletionRequestedAt"
-  | "deletionAttempts"
-  | "nextDeletionAttemptAt"
-  | "deletionFailedAt"
-> & {
-  hasRecoverableFailure: boolean;
-  retryAvailable: boolean;
-};
 
 export async function listReadyMediaForGuestGallery(input: {
   galleryId: string;
@@ -127,36 +102,6 @@ export async function listReadyMediaForOwnerGallery(input: {
   };
 }
 
-export async function listDeletePendingMediaForOwnerGallery(input: {
-  ownerClerkId: string;
-  galleryId: string;
-  now?: Date;
-}): Promise<DeletePendingMediaView[]> {
-  const now = input.now ?? new Date();
-  const items = await listDeletePendingMediaForOwner({
-    ownerClerkId: input.ownerClerkId,
-    galleryId: input.galleryId,
-  });
-
-  return items.map((item) => ({
-    id: item.id,
-    galleryId: item.galleryId,
-    originalFilename: item.originalFilename,
-    mediaKind: item.mediaKind,
-    declaredByteSize: item.declaredByteSize,
-    byteSize: item.byteSize,
-    createdAt: item.createdAt,
-    readyAt: item.readyAt,
-    deletionRequestedAt: item.deletionRequestedAt,
-    deletionAttempts: item.deletionAttempts,
-    nextDeletionAttemptAt: item.nextDeletionAttemptAt,
-    deletionFailedAt: item.deletionFailedAt,
-    hasRecoverableFailure: item.deletionFailedAt !== null,
-    retryAvailable:
-      item.nextDeletionAttemptAt === null || item.nextDeletionAttemptAt <= now,
-  }));
-}
-
 export async function deleteReadyMediaForOwner({
   ownerClerkId,
   galleryId,
@@ -168,77 +113,38 @@ export async function deleteReadyMediaForOwner({
   photoId: string;
   now?: Date;
 }): Promise<DeleteReadyMediaResult> {
-  const media = await claimReadyMediaDeletionForOwner({
+  const media = await getReadyPhotoForOwner({
     ownerClerkId,
     galleryId,
     photoId,
-    now,
   });
 
   if (!media) {
     return { outcome: "not-found" };
   }
 
-  return deleteClaimedMedia(media, now);
-}
-
-export async function retryPendingMediaDeletionForOwner({
-  ownerClerkId,
-  galleryId,
-  photoId,
-  now = new Date(),
-}: {
-  ownerClerkId: string;
-  galleryId: string;
-  photoId: string;
-  now?: Date;
-}): Promise<RetryPendingMediaDeletionResult> {
-  const media = await getRetryableDeletePendingMediaForOwner({
-    ownerClerkId,
-    galleryId,
-    photoId,
-    now,
-  });
-
-  if (!media) {
-    return { outcome: "not-found" };
-  }
-
-  return deleteClaimedMedia(media, now);
-}
-
-async function deleteClaimedMedia(
-  media: Photo,
-  now: Date,
-): Promise<DeleteReadyMediaResult> {
   try {
     await deleteUploadObjects(getMediaDeletionObjectKeys(media));
-  } catch (error) {
-    await recordMediaDeletionFailure({
-      photoId: media.id,
-      galleryId: media.galleryId,
-      failureReason: getSafeDeletionFailureReason(error),
-      now,
-    });
-
-    return { outcome: "retry-pending", media };
+  } catch {
+    return {
+      outcome: "retryable-error",
+      media,
+      message: "Media could not be deleted. Please try again.",
+    };
   }
 
-  await deletePendingMediaRecord({
-    galleryId: media.galleryId,
-    photoId: media.id,
+  const deleted = await deleteReadyMediaRecordForOwner({
+    ownerClerkId,
+    galleryId,
+    photoId,
+    now,
   });
 
-  return { outcome: "deleted", media };
-}
+  if (!deleted) {
+    return { outcome: "not-found" };
+  }
 
-function getSafeDeletionFailureReason(error: unknown) {
-  const failureType =
-    error instanceof Error && error.name.trim().length > 0
-      ? error.name.trim().slice(0, 80)
-      : "unknown";
-
-  return `R2 object deletion failed (${failureType}); retry scheduled.`;
+  return { outcome: "deleted", media: deleted };
 }
 
 function createReadyMediaView(

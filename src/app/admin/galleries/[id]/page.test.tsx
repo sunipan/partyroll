@@ -9,7 +9,6 @@ vi.mock("@clerk/nextjs", () => ({
 vi.mock("@/app/admin/galleries/actions", () => ({
   deleteGalleryMediaAction: vi.fn(),
   regenerateGalleryAccessAction: vi.fn(),
-  retryGalleryMediaDeletionAction: vi.fn(),
   updateGalleryStatusAction: vi.fn(),
 }));
 vi.mock("@/lib/auth", () => ({
@@ -22,17 +21,13 @@ vi.mock("@/lib/galleries/queries", () => ({
   getGalleryForOwner: vi.fn(),
 }));
 vi.mock("@/lib/uploads/media", () => ({
-  listDeletePendingMediaForOwnerGallery: vi.fn(),
   listReadyMediaForOwnerGallery: vi.fn(),
 }));
 
 import { requireAdmin } from "@/lib/auth";
 import { getGalleryInvitation } from "@/lib/galleries/invitations";
 import { getGalleryForOwner } from "@/lib/galleries/queries";
-import {
-  listDeletePendingMediaForOwnerGallery,
-  listReadyMediaForOwnerGallery,
-} from "@/lib/uploads/media";
+import { listReadyMediaForOwnerGallery } from "@/lib/uploads/media";
 
 import GalleryAdminPage from "./page";
 
@@ -42,7 +37,6 @@ const r2CredentialUrlPattern =
 describe("GalleryAdminPage media", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    vi.mocked(listDeletePendingMediaForOwnerGallery).mockResolvedValue([]);
   });
 
   it("renders admin media previews and downloads with stable owner paths", async () => {
@@ -137,15 +131,11 @@ describe("GalleryAdminPage media", () => {
       ownerClerkId: "owner-1",
       galleryId,
     });
-    expect(listDeletePendingMediaForOwnerGallery).toHaveBeenCalledWith({
-      ownerClerkId: "owner-1",
-      galleryId,
-    });
   });
 
-  it("renders delete-pending media with safe retry status instead of dropping it", async () => {
+  it("keeps ready media visible with a concise retry message after deletion failure", async () => {
     const galleryId = randomUUID();
-    const pendingId = randomUUID();
+    const mediaId = randomUUID();
 
     vi.mocked(requireAdmin).mockResolvedValue({ userId: "owner-1" });
     vi.mocked(getGalleryForOwner).mockResolvedValue({
@@ -162,35 +152,40 @@ describe("GalleryAdminPage media", () => {
       invitationLink: "https://partyroll.test/invite/launch-party",
     });
     vi.mocked(listReadyMediaForOwnerGallery).mockResolvedValue({
-      items: [],
+      items: [
+        {
+          id: mediaId,
+          galleryId,
+          originalFilename: "failed-delete.png",
+          declaredMimeType: "image/png",
+          declaredByteSize: 2_048,
+          mediaKind: "image",
+          mimeType: "image/jpeg",
+          byteSize: 1_024,
+          originalByteSize: 2_048,
+          width: 800,
+          height: 600,
+          createdAt: new Date("2026-07-18T12:00:00.000Z"),
+          readyAt: new Date("2026-07-18T12:01:00.000Z"),
+          originalUrl: `/admin/galleries/${galleryId}/media/${mediaId}/original`,
+          displayUrl: `/admin/galleries/${galleryId}/media/${mediaId}/display`,
+          thumbnailUrl: `/admin/galleries/${galleryId}/media/${mediaId}/thumbnail`,
+          downloadUrl: `/admin/galleries/${galleryId}/media/${mediaId}/download`,
+        },
+      ],
       nextCursor: null,
     });
-    vi.mocked(listDeletePendingMediaForOwnerGallery).mockResolvedValue([
-      {
-        id: pendingId,
-        galleryId,
-        originalFilename: "failed-delete.png",
-        mediaKind: "image",
-        declaredByteSize: 2_048,
-        byteSize: 1_024,
-        createdAt: new Date("2026-07-18T12:00:00.000Z"),
-        readyAt: new Date("2026-07-18T12:01:00.000Z"),
-        deletionRequestedAt: new Date("2026-07-18T12:02:00.000Z"),
-        deletionAttempts: 1,
-        nextDeletionAttemptAt: null,
-        deletionFailedAt: new Date("2026-07-18T12:03:00.000Z"),
-        hasRecoverableFailure: true,
-        retryAvailable: true,
-      },
-    ]);
 
     const html = renderToStaticMarkup(
-      await GalleryAdminPage({ params: Promise.resolve({ id: galleryId }) }),
+      await GalleryAdminPage({
+        params: Promise.resolve({ id: galleryId }),
+        searchParams: Promise.resolve({ deleteError: mediaId }),
+      }),
     );
 
-    expect(html).toContain("Deleting failed-delete.png");
-    expect(html).toContain("Deletion did not finish");
-    expect(html).toContain("Retry deleting failed-delete.png");
+    expect(html).toContain("View image failed-delete.png");
+    expect(html).toContain("Media could not be deleted. Please try again.");
+    expect(html).toContain("Retry delete");
     expect(html).not.toMatch(r2CredentialUrlPattern);
   });
 });

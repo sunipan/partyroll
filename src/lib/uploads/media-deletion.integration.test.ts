@@ -51,7 +51,6 @@ vi.mock("./objects", () => ({
 }));
 
 import { galleries, photos } from "@/db/schema";
-import * as mediaAssets from "@/lib/media-assets";
 
 import { deleteUploadObjects } from "./objects";
 
@@ -65,14 +64,12 @@ const createdGalleryIds: string[] = [];
 let db: (typeof import("@/db"))["db"];
 let galleryQueries: typeof import("@/lib/galleries/queries");
 let mediaService: typeof import("./media");
-let uploadQueries: typeof import("./queries");
 
-describe("retryable owner media deletion lifecycle", () => {
+describe("owner media deletion", () => {
   beforeAll(async () => {
     ({ db } = await import("@/db"));
     galleryQueries = await import("@/lib/galleries/queries");
     mediaService = await import("./media");
-    uploadQueries = await import("./queries");
   });
 
   beforeEach(() => {
@@ -107,135 +104,95 @@ describe("retryable owner media deletion lifecycle", () => {
     await expect(getPhotoStatus(photo.id)).resolves.toBe("ready");
   });
 
-  it(
-    "hides ready media immediately, records partial R2 failures, and retries to convergence",
-    async () => {
-      const gallery = await createGallery(owner);
-      const photo = await insertReadyPhoto(gallery.id, {
-        quarantineObjectKey: `custom/${gallery.id}/${randomUUID()}/quarantine`,
-        originalObjectKey: `custom/${gallery.id}/${randomUUID()}/original`,
-        displayObjectKey: `custom/${gallery.id}/${randomUUID()}/display.jpg`,
-        thumbnailObjectKey: `custom/${gallery.id}/${randomUUID()}/thumbnail.jpg`,
-      });
-      const firstAttemptStartedAt = new Date("2026-07-19T18:00:00.000Z");
-      const deferredDelete = createDeferred<void>();
-      vi.mocked(deleteUploadObjects).mockReturnValueOnce(deferredDelete.promise);
+  it("deletes provider objects before deleting the ready row and accounting", async () => {
+    const gallery = await createGallery(owner);
+    const photo = await insertReadyPhoto(gallery.id, {
+      quarantineObjectKey: `custom/${gallery.id}/${randomUUID()}/quarantine`,
+      originalObjectKey: `custom/${gallery.id}/${randomUUID()}/original`,
+      displayObjectKey: `custom/${gallery.id}/${randomUUID()}/display.jpg`,
+      thumbnailObjectKey: `custom/${gallery.id}/${randomUUID()}/thumbnail.jpg`,
+    });
 
-      const deletion = mediaService.deleteReadyMediaForOwner({
+    await expect(
+      mediaService.deleteReadyMediaForOwner({
         ownerClerkId: owner,
         galleryId: gallery.id,
         photoId: photo.id,
-        now: firstAttemptStartedAt,
-      });
-      await waitForDeleteAttempts(1);
+      }),
+    ).resolves.toMatchObject({ outcome: "deleted", media: { id: photo.id } });
 
-      expect(new Set(vi.mocked(deleteUploadObjects).mock.calls[0][0])).toEqual(
-        new Set([
-          photo.quarantineObjectKey,
-          photo.originalObjectKey,
-          `quarantine/${gallery.id}/${photo.id}`,
-          `originals/${gallery.id}/${photo.id}`,
-          photo.displayObjectKey,
-          photo.thumbnailObjectKey,
-          `photos/${gallery.id}/${photo.id}/display.jpg`,
-          `photos/${gallery.id}/${photo.id}/thumbnail.jpg`,
-        ]),
-      );
-      await expect(
-        uploadQueries.listReadyMediaForOwner({
-          ownerClerkId: owner,
-          galleryId: gallery.id,
-        }),
-      ).resolves.toEqual({ items: [], nextCursor: null });
-      await expect(
-        uploadQueries.listReadyMediaForGuest({
-          galleryId: gallery.id,
-          slug: gallery.slug,
-          accessVersion: gallery.accessVersion,
-        }),
-      ).resolves.toEqual({ items: [], nextCursor: null });
-      await expect(
-        mediaAssets.lookupAdminMediaAssetForOwner({
-          ownerClerkId: owner,
-          galleryId: gallery.id,
-          mediaId: photo.id,
-          variant: "display",
-        }),
-      ).resolves.toBeNull();
-      await expect(
-        mediaAssets.lookupGuestMediaAssetForSession({
-          galleryId: gallery.id,
-          slug: gallery.slug,
-          accessVersion: gallery.accessVersion,
-          mediaId: photo.id,
-          variant: "display",
-        }),
-      ).resolves.toBeNull();
-      await expect(getGalleryAccounting(gallery.id)).resolves.toEqual({
-        photoCount: 0,
-        storageBytes: 0,
-      });
+    expect(new Set(vi.mocked(deleteUploadObjects).mock.calls[0][0])).toEqual(
+      new Set([
+        photo.quarantineObjectKey,
+        photo.originalObjectKey,
+        `quarantine/${gallery.id}/${photo.id}`,
+        `originals/${gallery.id}/${photo.id}`,
+        photo.displayObjectKey,
+        photo.thumbnailObjectKey,
+        `photos/${gallery.id}/${photo.id}/display.jpg`,
+        `photos/${gallery.id}/${photo.id}/thumbnail.jpg`,
+      ]),
+    );
+    await expect(getPhoto(photo.id)).resolves.toBeNull();
+    await expect(getGalleryAccounting(gallery.id)).resolves.toEqual({
+      photoCount: 0,
+      storageBytes: 0,
+    });
+  });
 
-      deferredDelete.reject(new Error("R2 failed for hidden/object/key"));
-      await expect(deletion).resolves.toMatchObject({
-        outcome: "retry-pending",
-        media: { id: photo.id },
-      });
+  it("leaves the ready row and accounting unchanged when provider deletion fails", async () => {
+    const gallery = await createGallery(owner);
+    const photo = await insertReadyPhoto(gallery.id);
+    vi.mocked(deleteUploadObjects).mockRejectedValueOnce(new Error("R2 failed"));
 
-      const failedPhoto = await getPhoto(photo.id);
-      expect(failedPhoto).toMatchObject({
-        status: "delete_pending",
-        deletionAttempts: 1,
-        deletionRequestedAt: firstAttemptStartedAt,
-        deletionAccountedAt: firstAttemptStartedAt,
-        deletionFailedAt: firstAttemptStartedAt,
-        deletionFailureReason: "R2 object deletion failed (Error); retry scheduled.",
-      });
-      expect(failedPhoto?.nextDeletionAttemptAt).toBeInstanceOf(Date);
-      expect(failedPhoto?.deletionFailureReason).not.toContain("hidden/object/key");
+    await expect(
+      mediaService.deleteReadyMediaForOwner({
+        ownerClerkId: owner,
+        galleryId: gallery.id,
+        photoId: photo.id,
+      }),
+    ).resolves.toMatchObject({
+      outcome: "retryable-error",
+      message: "Media could not be deleted. Please try again.",
+      media: { id: photo.id },
+    });
 
-      await expect(
-        mediaService.deleteReadyMediaForOwner({
-          ownerClerkId: owner,
-          galleryId: gallery.id,
-          photoId: photo.id,
-        }),
-      ).resolves.toEqual({ outcome: "not-found" });
-      expect(deleteUploadObjects).toHaveBeenCalledTimes(1);
-      await expect(getGalleryAccounting(gallery.id)).resolves.toEqual({
-        photoCount: 0,
-        storageBytes: 0,
-      });
+    await expect(getPhotoStatus(photo.id)).resolves.toBe("ready");
+    await expect(getGalleryAccounting(gallery.id)).resolves.toEqual({
+      photoCount: 1,
+      storageBytes: finalByteSize,
+    });
+  });
 
-      vi.mocked(deleteUploadObjects).mockResolvedValueOnce(undefined);
-      const retryAt = new Date(failedPhoto!.nextDeletionAttemptAt!.getTime() + 1);
-      await expect(
-        mediaService.retryPendingMediaDeletionForOwner({
-          ownerClerkId: owner,
-          galleryId: gallery.id,
-          photoId: photo.id,
-          now: retryAt,
-        }),
-      ).resolves.toMatchObject({ outcome: "deleted", media: { id: photo.id } });
-      expect(deleteUploadObjects).toHaveBeenCalledTimes(2);
-      await expect(getPhoto(photo.id)).resolves.toBeNull();
-      await expect(getGalleryAccounting(gallery.id)).resolves.toEqual({
-        photoCount: 0,
-        storageBytes: 0,
-      });
+  it("lets a later retry delete the unchanged ready row after provider recovery", async () => {
+    const gallery = await createGallery(owner);
+    const photo = await insertReadyPhoto(gallery.id);
+    vi.mocked(deleteUploadObjects)
+      .mockRejectedValueOnce(new Error("R2 failed"))
+      .mockResolvedValueOnce(undefined);
 
-      await expect(
-        mediaService.retryPendingMediaDeletionForOwner({
-          ownerClerkId: owner,
-          galleryId: gallery.id,
-          photoId: photo.id,
-          now: retryAt,
-        }),
-      ).resolves.toEqual({ outcome: "not-found" });
-      expect(deleteUploadObjects).toHaveBeenCalledTimes(2);
-    },
-    15_000,
-  );
+    await expect(
+      mediaService.deleteReadyMediaForOwner({
+        ownerClerkId: owner,
+        galleryId: gallery.id,
+        photoId: photo.id,
+      }),
+    ).resolves.toMatchObject({ outcome: "retryable-error" });
+    await expect(
+      mediaService.deleteReadyMediaForOwner({
+        ownerClerkId: owner,
+        galleryId: gallery.id,
+        photoId: photo.id,
+      }),
+    ).resolves.toMatchObject({ outcome: "deleted", media: { id: photo.id } });
+
+    expect(deleteUploadObjects).toHaveBeenCalledTimes(2);
+    await expect(getPhoto(photo.id)).resolves.toBeNull();
+    await expect(getGalleryAccounting(gallery.id)).resolves.toEqual({
+      photoCount: 0,
+      storageBytes: 0,
+    });
+  });
 });
 
 async function createGallery(ownerClerkId: string) {
@@ -324,24 +281,4 @@ async function getPhoto(photoId: string) {
 
 async function getPhotoStatus(photoId: string) {
   return (await getPhoto(photoId))?.status ?? null;
-}
-
-function createDeferred<T>() {
-  let resolve!: (value: T | PromiseLike<T>) => void;
-  let reject!: (reason?: unknown) => void;
-  const promise = new Promise<T>((innerResolve, innerReject) => {
-    resolve = innerResolve;
-    reject = innerReject;
-  });
-  return { promise, resolve, reject };
-}
-
-async function waitForDeleteAttempts(expectedCalls: number) {
-  for (let attempt = 0; attempt < 200; attempt += 1) {
-    if (vi.mocked(deleteUploadObjects).mock.calls.length >= expectedCalls) {
-      return;
-    }
-    await new Promise((resolve) => setTimeout(resolve, 25));
-  }
-  throw new Error(`Expected ${expectedCalls} R2 deletion attempt(s).`);
 }

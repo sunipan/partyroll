@@ -8,10 +8,7 @@ import { AdminHeader } from "@/components/admin/admin-header";
 import { CopyField } from "@/components/admin/copy-field";
 import { GalleryStatusBadge } from "@/components/admin/gallery-status-badge";
 import { GalleryStatusControls } from "@/components/admin/gallery-status-controls";
-import {
-  AdminDeletePendingMediaList,
-  AdminMediaDeletionControl,
-} from "@/components/admin/media-deletion-controls";
+import { AdminMediaDeletionControl } from "@/components/admin/media-deletion-controls";
 import {
   GalleryMediaViewer,
   type GalleryMediaViewerItem,
@@ -28,10 +25,7 @@ import { requireAdmin } from "@/lib/auth";
 import { getGalleryInvitation } from "@/lib/galleries/invitations";
 import { getGalleryForOwner } from "@/lib/galleries/queries";
 import { galleryIdSchema } from "@/lib/galleries/rules";
-import {
-  listDeletePendingMediaForOwnerGallery,
-  listReadyMediaForOwnerGallery,
-} from "@/lib/uploads/media";
+import { listReadyMediaForOwnerGallery } from "@/lib/uploads/media";
 
 const dateFormatter = new Intl.DateTimeFormat("en", {
   dateStyle: "long",
@@ -65,7 +59,7 @@ export default async function GalleryAdminPage({
 }: GalleryPageProps) {
   const { userId } = await requireAdmin();
   const { id } = await params;
-  const cursor = await getReadyMediaCursor(searchParams);
+  const { cursor, deleteError } = await getReadyMediaSearchParams(searchParams);
   const parsedId = galleryIdSchema.safeParse(id);
 
   if (!parsedId.success) {
@@ -84,10 +78,6 @@ export default async function GalleryAdminPage({
     ownerClerkId: userId,
     galleryId: gallery.id,
     ...(cursor === undefined ? {} : { cursor }),
-  });
-  const deletePendingMedia = await listDeletePendingMediaForOwnerGallery({
-    ownerClerkId: userId,
-    galleryId: gallery.id,
   });
   const readyMedia = readyMediaPage.items;
 
@@ -210,6 +200,8 @@ export default async function GalleryAdminPage({
                       galleryId={gallery.id}
                       mediaId={media.id}
                       originalFilename={media.originalFilename}
+                      cursor={cursor}
+                      deletionFailed={deleteError === media.id}
                     />
                   ))}
                 />
@@ -229,10 +221,6 @@ export default async function GalleryAdminPage({
                 ) : null}
               </>
             )}
-            <AdminDeletePendingMediaList
-              galleryId={gallery.id}
-              items={deletePendingMedia}
-            />
           </CardContent>
         </Card>
 
@@ -258,16 +246,17 @@ export default async function GalleryAdminPage({
   );
 }
 
-async function getReadyMediaCursor(
+async function getReadyMediaSearchParams(
   searchParams?: Promise<{ [key: string]: string | string[] | undefined }>,
 ) {
-  const cursor = searchParams ? (await searchParams).cursor : undefined;
+  const params = searchParams ? await searchParams : undefined;
+  const cursor = params?.cursor;
+  const deleteError = params?.deleteError;
 
-  if (cursor === undefined || typeof cursor === "string") {
-    return cursor;
-  }
-
-  return "";
+  return {
+    cursor: cursor === undefined || typeof cursor === "string" ? cursor : "",
+    deleteError: typeof deleteError === "string" ? deleteError : undefined,
+  };
 }
 
 function toGalleryMediaViewerItem(media: GalleryMediaViewerItem) {

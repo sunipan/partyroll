@@ -21,8 +21,6 @@ import {
 } from "./objects";
 import {
   COMPLETION_RETRY_DELAY_MILLISECONDS,
-  MEDIA_DELETION_RETRY_DELAY_MILLISECONDS,
-  MAX_MEDIA_DELETION_ATTEMPTS,
   MAX_COMPLETION_ATTEMPTS,
   UPLOAD_CLEANUP_GRACE_MILLISECONDS,
   UPLOAD_WORK_LEASE_MILLISECONDS,
@@ -74,14 +72,6 @@ export type PhotoProcessingLeaseRenewalResult =
   | { outcome: "unavailable" }
   | { outcome: "state-changed" };
 
-export type MediaDeletionFailureInput = {
-  photoId: string;
-  galleryId: string;
-  failureReason: string;
-  now?: Date;
-  retryAt?: Date;
-};
-
 export type UploadCleanupClaim = {
   photo: Photo;
   leaseStartedAt: Date;
@@ -130,37 +120,6 @@ export type ReadyMedia = Pick<
 type ReadyMediaRow = ReadyMedia & {
   cursorCreatedAt: string;
 };
-
-const deletePendingMediaColumns = {
-  id: photos.id,
-  galleryId: photos.galleryId,
-  originalFilename: photos.originalFilename,
-  mediaKind: photos.mediaKind,
-  declaredByteSize: photos.declaredByteSize,
-  byteSize: photos.byteSize,
-  createdAt: photos.createdAt,
-  readyAt: photos.readyAt,
-  deletionRequestedAt: photos.deletionRequestedAt,
-  deletionAttempts: photos.deletionAttempts,
-  nextDeletionAttemptAt: photos.nextDeletionAttemptAt,
-  deletionFailedAt: photos.deletionFailedAt,
-};
-
-export type DeletePendingMedia = Pick<
-  Photo,
-  | "id"
-  | "galleryId"
-  | "originalFilename"
-  | "mediaKind"
-  | "declaredByteSize"
-  | "byteSize"
-  | "createdAt"
-  | "readyAt"
-  | "deletionRequestedAt"
-  | "deletionAttempts"
-  | "nextDeletionAttemptAt"
-  | "deletionFailedAt"
->;
 
 type ReadyMediaListInput = {
   cursor?: string;
@@ -467,28 +426,6 @@ export async function listReadyMediaForOwner({
   return createReadyMediaResult(rows, pageSize);
 }
 
-export async function listDeletePendingMediaForOwner({
-  ownerClerkId,
-  galleryId,
-}: {
-  ownerClerkId: string;
-  galleryId: string;
-}): Promise<DeletePendingMedia[]> {
-  return db
-    .select(deletePendingMediaColumns)
-    .from(photos)
-    .innerJoin(galleries, eq(photos.galleryId, galleries.id))
-    .where(
-      and(
-        eq(photos.galleryId, galleryId),
-        eq(photos.status, "delete_pending"),
-        eq(galleries.id, galleryId),
-        eq(galleries.ownerClerkId, ownerClerkId),
-      ),
-    )
-    .orderBy(desc(photos.deletionRequestedAt), desc(photos.id));
-}
-
 function parseReadyMediaCursor(cursor: string | undefined) {
   if (cursor === undefined) {
     return null;
@@ -569,7 +506,34 @@ export async function getReadyMediaForOwner({
   return photo ? stripReadyMediaCursorCreatedAt(photo) : null;
 }
 
-export async function claimReadyMediaDeletionForOwner({
+export async function getReadyPhotoForOwner({
+  ownerClerkId,
+  galleryId,
+  photoId,
+}: {
+  ownerClerkId: string;
+  galleryId: string;
+  photoId: string;
+}): Promise<Photo | null> {
+  const [photo] = await db
+    .select({ photo: photos })
+    .from(photos)
+    .innerJoin(galleries, eq(photos.galleryId, galleries.id))
+    .where(
+      and(
+        eq(photos.id, photoId),
+        eq(photos.galleryId, galleryId),
+        eq(photos.status, "ready"),
+        eq(galleries.id, galleryId),
+        eq(galleries.ownerClerkId, ownerClerkId),
+      ),
+    )
+    .limit(1);
+
+  return photo?.photo ?? null;
+}
+
+export async function deleteReadyMediaRecordForOwner({
   ownerClerkId,
   galleryId,
   photoId,
@@ -597,22 +561,12 @@ export async function claimReadyMediaDeletionForOwner({
       .limit(1)
       .for("update");
 
-    if (!candidate) {
-      return null;
-    }
+    if (!candidate) return null;
 
     const deletedStorageBytes = requireReadyByteSize(candidate.photo.byteSize);
 
-    const [claimedPhoto] = await tx
-      .update(photos)
-      .set({
-        status: "delete_pending",
-        deletionRequestedAt: now,
-        deletionAccountedAt: now,
-        deletionFailedAt: null,
-        deletionFailureReason: null,
-        nextDeletionAttemptAt: null,
-      })
+    const [deletedPhoto] = await tx
+      .delete(photos)
       .where(
         and(
           eq(photos.id, photoId),
@@ -622,9 +576,7 @@ export async function claimReadyMediaDeletionForOwner({
       )
       .returning();
 
-    if (!claimedPhoto) {
-      return null;
-    }
+    if (!deletedPhoto) return null;
 
     await tx
       .update(galleries)
@@ -640,93 +592,8 @@ export async function claimReadyMediaDeletionForOwner({
         ),
       );
 
-    return claimedPhoto;
+    return deletedPhoto;
   });
-}
-
-export async function getRetryableDeletePendingMediaForOwner({
-  ownerClerkId,
-  galleryId,
-  photoId,
-  now = new Date(),
-}: {
-  ownerClerkId: string;
-  galleryId: string;
-  photoId: string;
-  now?: Date;
-}): Promise<Photo | null> {
-  const [photo] = await db
-    .select({ photo: photos })
-    .from(photos)
-    .innerJoin(galleries, eq(photos.galleryId, galleries.id))
-    .where(
-      and(
-        eq(photos.id, photoId),
-        eq(photos.galleryId, galleryId),
-        eq(photos.status, "delete_pending"),
-        eq(galleries.id, galleryId),
-        eq(galleries.ownerClerkId, ownerClerkId),
-        or(
-          isNull(photos.nextDeletionAttemptAt),
-          lte(photos.nextDeletionAttemptAt, now),
-        ),
-      ),
-    )
-    .limit(1);
-
-  return photo?.photo ?? null;
-}
-
-export async function deletePendingMediaRecord({
-  galleryId,
-  photoId,
-}: {
-  galleryId: string;
-  photoId: string;
-}): Promise<Photo | null> {
-  const [deletedPhoto] = await db
-    .delete(photos)
-    .where(
-      and(
-        eq(photos.id, photoId),
-        eq(photos.galleryId, galleryId),
-        eq(photos.status, "delete_pending"),
-      ),
-    )
-    .returning();
-
-  return deletedPhoto ?? null;
-}
-
-export async function recordMediaDeletionFailure({
-  photoId,
-  galleryId,
-  failureReason,
-  now = new Date(),
-  retryAt = getMediaDeletionRetryAt(now),
-}: MediaDeletionFailureInput): Promise<Photo | null> {
-  const [photo] = await db
-    .update(photos)
-    .set({
-      deletionAttempts: sql`least(${photos.deletionAttempts} + 1, ${MAX_MEDIA_DELETION_ATTEMPTS})`,
-      deletionFailedAt: now,
-      deletionFailureReason: failureReason,
-      nextDeletionAttemptAt: retryAt,
-    })
-    .where(
-      and(
-        eq(photos.id, photoId),
-        eq(photos.galleryId, galleryId),
-        eq(photos.status, "delete_pending"),
-      ),
-    )
-    .returning();
-
-  return photo ?? null;
-}
-
-export function getMediaDeletionRetryAt(now = new Date()) {
-  return new Date(now.getTime() + MEDIA_DELETION_RETRY_DELAY_MILLISECONDS);
 }
 
 function requireReadyByteSize(byteSize: number | null) {
@@ -1238,11 +1105,7 @@ function isGalleryUploadCompletionAccessible(status: (typeof galleries.$inferSel
 }
 
 function isPhotoTerminalForUploadCompletion(status: Photo["status"]) {
-  return (
-    status === "rejected" ||
-    status === "deleting" ||
-    status === "delete_pending"
-  );
+  return status === "rejected" || status === "deleting";
 }
 
 function galleryAllowsUploadCompletionPredicate() {

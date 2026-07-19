@@ -1,0 +1,205 @@
+import "server-only";
+
+import {
+  getAdminMediaAssetPath,
+  getGuestMediaAssetPath,
+  resolveMediaAssetVariant,
+  type MediaAssetVariant,
+} from "@/lib/media-assets";
+
+import { deleteUploadObjects, getReadyMediaObjectKeys } from "./objects";
+import {
+  deleteReadyMediaRecordForOwner,
+  getReadyMediaForOwner,
+  listReadyMediaForGuest,
+  listReadyMediaForOwner,
+  type ReadyMedia,
+} from "./queries";
+
+type ReadyMediaViewBase = Omit<
+  ReadyMedia,
+  | "mediaKind"
+  | "quarantineObjectKey"
+  | "originalFilename"
+  | "mimeType"
+  | "byteSize"
+  | "originalObjectKey"
+  | "displayObjectKey"
+  | "thumbnailObjectKey"
+  | "width"
+  | "height"
+> & {
+  originalFilename: string;
+  mimeType: string;
+  byteSize: number;
+  originalByteSize: number;
+  originalUrl: string;
+  displayUrl: string;
+};
+
+export type ReadyMediaView =
+  | (ReadyMediaViewBase & {
+      mediaKind: "image";
+      width: number;
+      height: number;
+      thumbnailUrl: string;
+    })
+  | (ReadyMediaViewBase & {
+      mediaKind: "video";
+      width: null;
+      height: null;
+      thumbnailUrl: null;
+    });
+
+export type DeleteReadyMediaResult =
+  | { outcome: "deleted"; media: ReadyMedia }
+  | { outcome: "not-found" };
+
+export async function listReadyMediaForGuestGallery(input: {
+  galleryId: string;
+  slug: string;
+  accessVersion: number;
+}): Promise<ReadyMediaView[]> {
+  const media = await listReadyMediaForGuest(input);
+
+  return media.map((item) =>
+    createReadyMediaView(item, (variant) =>
+      getGuestMediaAssetPath({
+        slug: input.slug,
+        mediaId: item.id,
+        variant,
+      }),
+    ),
+  );
+}
+
+export async function listReadyMediaForOwnerGallery(input: {
+  ownerClerkId: string;
+  galleryId: string;
+}): Promise<ReadyMediaView[]> {
+  const media = await listReadyMediaForOwner(input);
+
+  return media.map((item) =>
+    createReadyMediaView(item, (variant) =>
+      getAdminMediaAssetPath({
+        galleryId: input.galleryId,
+        mediaId: item.id,
+        variant,
+      }),
+    ),
+  );
+}
+
+export async function deleteReadyMediaForOwner({
+  ownerClerkId,
+  galleryId,
+  photoId,
+}: {
+  ownerClerkId: string;
+  galleryId: string;
+  photoId: string;
+}): Promise<DeleteReadyMediaResult> {
+  const media = await getReadyMediaForOwner({
+    ownerClerkId,
+    galleryId,
+    photoId,
+  });
+
+  if (!media) {
+    return { outcome: "not-found" };
+  }
+
+  await deleteUploadObjects(getReadyMediaObjectKeys(media));
+
+  const deleted = await deleteReadyMediaRecordForOwner({
+    ownerClerkId,
+    galleryId,
+    photoId,
+  });
+
+  return deleted ? { outcome: "deleted", media } : { outcome: "not-found" };
+}
+
+function createReadyMediaView(
+  media: ReadyMedia,
+  getAssetPath: (variant: MediaAssetVariant) => string,
+): ReadyMediaView {
+  const originalAsset = requireResolvedAsset(media, "original");
+
+  if (media.mediaKind === "image") {
+    const displayAsset = requireResolvedAsset(media, "display");
+    requireResolvedAsset(media, "thumbnail");
+    const width = requireImageDimension(displayAsset.width);
+    const height = requireImageDimension(displayAsset.height);
+
+    return {
+      ...getPublicReadyMedia(media),
+      originalFilename: originalAsset.safeOriginalFilename,
+      mediaKind: "image",
+      declaredMimeType: originalAsset.originalMimeType,
+      mimeType: originalAsset.responseContentType,
+      originalByteSize: originalAsset.originalByteSize,
+      byteSize: originalAsset.retainedByteSize,
+      width,
+      height,
+      originalUrl: getAssetPath("original"),
+      displayUrl: getAssetPath("display"),
+      thumbnailUrl: getAssetPath("thumbnail"),
+    };
+  }
+
+  if (media.mediaKind === "video") {
+    const videoAsset = requireResolvedAsset(media, "video");
+
+    return {
+      ...getPublicReadyMedia(media),
+      originalFilename: originalAsset.safeOriginalFilename,
+      mediaKind: "video",
+      declaredMimeType: originalAsset.originalMimeType,
+      mimeType: originalAsset.responseContentType,
+      originalByteSize: originalAsset.originalByteSize,
+      byteSize: originalAsset.retainedByteSize,
+      width: null,
+      height: null,
+      originalUrl: getAssetPath("video"),
+      displayUrl: getAssetPath(videoAsset.variant),
+      thumbnailUrl: null,
+    };
+  }
+
+  throw new Error("Ready media is missing media kind.");
+}
+
+function getPublicReadyMedia(media: ReadyMedia) {
+  return {
+    id: media.id,
+    galleryId: media.galleryId,
+    originalFilename: media.originalFilename,
+    declaredMimeType: media.declaredMimeType,
+    declaredByteSize: media.declaredByteSize,
+    mediaKind: media.mediaKind,
+    mimeType: media.mimeType,
+    byteSize: media.byteSize,
+    width: media.width,
+    height: media.height,
+    createdAt: media.createdAt,
+    readyAt: media.readyAt,
+  };
+}
+
+function requireResolvedAsset(media: ReadyMedia, variant: MediaAssetVariant) {
+  const asset = resolveMediaAssetVariant(media, variant);
+  if (!asset) {
+    throw new Error("Ready media is missing required current metadata.");
+  }
+
+  return asset;
+}
+
+function requireImageDimension(value: number | null) {
+  if (value === null) {
+    throw new Error("Ready media is missing required current metadata.");
+  }
+
+  return value;
+}

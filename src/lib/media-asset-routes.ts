@@ -5,6 +5,7 @@ import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { NextResponse } from "next/server";
 
 import {
+  lookupAdminMediaAsset,
   lookupGuestMediaAsset,
   type MediaAssetVariant,
   type ResolvedMediaAsset,
@@ -25,9 +26,14 @@ const PRIVATE_RESPONSE_HEADERS = {
 } as const;
 
 type LookupGuestMediaAsset = typeof lookupGuestMediaAsset;
+type LookupAdminMediaAsset = typeof lookupAdminMediaAsset;
 
 export type GuestMediaAssetRouteContext = {
   params: Promise<{ slug: string; mediaId: string }>;
+};
+
+export type AdminMediaAssetRouteContext = {
+  params: Promise<{ galleryId: string; mediaId: string }>;
 };
 
 export type MediaAssetResponseMetadata = {
@@ -51,6 +57,11 @@ type GuestMediaAssetRouteDeps = {
   signMediaAssetUrl?: SignMediaAssetUrl;
 };
 
+type AdminMediaAssetRouteDeps = {
+  lookupAdminMediaAsset?: LookupAdminMediaAsset;
+  signMediaAssetUrl?: SignMediaAssetUrl;
+};
+
 export async function handleGuestMediaAssetGET(
   _request: Request,
   { params }: GuestMediaAssetRouteContext,
@@ -58,11 +69,40 @@ export async function handleGuestMediaAssetGET(
   deps: GuestMediaAssetRouteDeps = {},
 ): Promise<Response> {
   const { slug, mediaId } = await params;
-  const asset = await (deps.lookupGuestMediaAsset ?? lookupGuestMediaAsset)({
-    slug,
-    mediaId,
-    variant,
-  });
+  return handleResolvedMediaAssetGET(
+    () =>
+      (deps.lookupGuestMediaAsset ?? lookupGuestMediaAsset)({
+        slug,
+        mediaId,
+        variant,
+      }),
+    { signMediaAssetUrl: deps.signMediaAssetUrl },
+  );
+}
+
+export async function handleAdminMediaAssetGET(
+  _request: Request,
+  { params }: AdminMediaAssetRouteContext,
+  variant: MediaAssetVariant,
+  deps: AdminMediaAssetRouteDeps = {},
+): Promise<Response> {
+  const { galleryId, mediaId } = await params;
+  return handleResolvedMediaAssetGET(
+    () =>
+      (deps.lookupAdminMediaAsset ?? lookupAdminMediaAsset)({
+        galleryId,
+        mediaId,
+        variant,
+      }),
+    { signMediaAssetUrl: deps.signMediaAssetUrl },
+  );
+}
+
+async function handleResolvedMediaAssetGET(
+  resolveAsset: () => Promise<ResolvedMediaAsset | null>,
+  deps: { signMediaAssetUrl?: SignMediaAssetUrl },
+): Promise<Response> {
+  const asset = await resolveAsset();
 
   if (!asset) {
     return createMediaAssetNotFoundResponse();

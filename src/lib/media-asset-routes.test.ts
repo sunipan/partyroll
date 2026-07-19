@@ -12,6 +12,7 @@ vi.mock("@aws-sdk/s3-request-presigner", () => ({
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 
 import {
+  handleAdminMediaAssetGET,
   handleGuestMediaAssetGET,
   MEDIA_ASSET_CACHE_CONTROL,
   MEDIA_REDIRECT_URL_SECONDS,
@@ -117,6 +118,94 @@ describe("guest media asset route responses", () => {
 
 });
 
+describe("admin owner media asset route responses", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("authorizes with the admin owner lookup before signing and redirects privately", async () => {
+    const resolved = asset({
+      variant: "download",
+      objectKey: "original-key",
+      originalMimeType: "image/png",
+      responseContentType: "image/png",
+      safeOriginalFilename: "party portrait.png",
+    });
+    const lookupAdminMediaAsset = vi.fn(async () => resolved);
+    const signMediaAssetUrl = vi.fn(
+      async () => "https://r2.example/admin-download",
+    );
+
+    const response = await handleAdminMediaAssetGET(
+      adminRouteRequest("download"),
+      adminRouteParams(),
+      "download",
+      {
+        lookupAdminMediaAsset,
+        signMediaAssetUrl,
+      },
+    );
+
+    expect(lookupAdminMediaAsset).toHaveBeenCalledWith({
+      galleryId: "gallery-1",
+      mediaId: "media-1",
+      variant: "download",
+    });
+    expect(signMediaAssetUrl).toHaveBeenCalledWith({
+      asset: resolved,
+      responseMetadata: {
+        cacheControl: MEDIA_ASSET_CACHE_CONTROL,
+        contentType: "image/png",
+        contentDisposition:
+          "attachment; filename=\"party portrait.png\"; filename*=UTF-8''party%20portrait.png",
+      },
+      expiresInSeconds: MEDIA_REDIRECT_URL_SECONDS,
+    });
+    expect(response.status).toBe(307);
+    expect(response.headers.get("location")).toBe(
+      "https://r2.example/admin-download",
+    );
+    expectPrivateHeaders(response);
+  });
+
+  it("returns identical minimal no-store 404s for admin denial and owner-scope misses", async () => {
+    const denialCases = [
+      "unauthenticated",
+      "forbidden owner",
+      "cross-owner gallery",
+      "missing gallery",
+      "missing media",
+      "not-ready media",
+      "archived gallery",
+      "wrong variant for kind",
+    ];
+
+    for (const label of denialCases) {
+      const lookupAdminMediaAsset = vi.fn(async () => null);
+      const signMediaAssetUrl = vi.fn();
+      const response = await handleAdminMediaAssetGET(
+        adminRouteRequest(label),
+        adminRouteParams({ mediaId: label }),
+        "display",
+        {
+          lookupAdminMediaAsset,
+          signMediaAssetUrl,
+        },
+      );
+
+      expect(response.status, label).toBe(404);
+      expect(await response.text(), label).toBe("Not found");
+      expectPrivateHeaders(response);
+      expect(lookupAdminMediaAsset, label).toHaveBeenCalledWith({
+        galleryId: "gallery-1",
+        mediaId: label,
+        variant: "display",
+      });
+      expect(signMediaAssetUrl, label).not.toHaveBeenCalled();
+    }
+  });
+});
+
 function expectPrivateHeaders(response: Response) {
   expect(Object.fromEntries(response.headers)).toMatchObject({
     "cache-control": MEDIA_ASSET_CACHE_CONTROL,
@@ -134,6 +223,21 @@ function routeRequest(mediaId: string) {
 
 function routeParams(mediaId = "media-1") {
   return { params: Promise.resolve({ slug: "party", mediaId }) };
+}
+
+function adminRouteRequest(mediaId: string) {
+  return new Request(
+    `https://partyroll.test/admin/galleries/gallery-1/media/${mediaId}/display`,
+  );
+}
+
+function adminRouteParams(overrides: { mediaId?: string } = {}) {
+  return {
+    params: Promise.resolve({
+      galleryId: "gallery-1",
+      mediaId: overrides.mediaId ?? "media-1",
+    }),
+  };
 }
 
 function asset(overrides: Partial<ResolvedMediaAsset> = {}): ResolvedMediaAsset {

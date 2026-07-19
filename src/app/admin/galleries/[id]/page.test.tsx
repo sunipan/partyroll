@@ -57,46 +57,49 @@ describe("GalleryAdminPage media", () => {
       accessCode: "ABC123",
       invitationLink: "https://partyroll.test/invite/launch-party",
     });
-    vi.mocked(listReadyMediaForOwnerGallery).mockResolvedValue([
-      {
-        id: imageId,
-        galleryId,
-        originalFilename: "dance-floor.png",
-        declaredMimeType: "image/png",
-        declaredByteSize: 2_048,
-        mediaKind: "image",
-        mimeType: "image/jpeg",
-        byteSize: 1_024,
-        originalByteSize: 2_048,
-        width: 800,
-        height: 600,
-        createdAt: new Date("2026-07-18T12:00:00.000Z"),
-        readyAt: new Date("2026-07-18T12:01:00.000Z"),
-        originalUrl: `/admin/galleries/${galleryId}/media/${imageId}/original`,
-        displayUrl: `/admin/galleries/${galleryId}/media/${imageId}/display`,
-        thumbnailUrl: `/admin/galleries/${galleryId}/media/${imageId}/thumbnail`,
-        downloadUrl: `/admin/galleries/${galleryId}/media/${imageId}/download`,
-      },
-      {
-        id: videoId,
-        galleryId,
-        originalFilename: "first-dance.mp4",
-        declaredMimeType: "video/mp4",
-        declaredByteSize: 3_072,
-        mediaKind: "video",
-        mimeType: "video/mp4",
-        byteSize: 3_072,
-        originalByteSize: 3_072,
-        width: null,
-        height: null,
-        createdAt: new Date("2026-07-18T12:02:00.000Z"),
-        readyAt: new Date("2026-07-18T12:03:00.000Z"),
-        originalUrl: `/admin/galleries/${galleryId}/media/${videoId}/video`,
-        displayUrl: `/admin/galleries/${galleryId}/media/${videoId}/video`,
-        thumbnailUrl: null,
-        downloadUrl: `/admin/galleries/${galleryId}/media/${videoId}/download`,
-      },
-    ]);
+    vi.mocked(listReadyMediaForOwnerGallery).mockResolvedValue({
+      items: [
+        {
+          id: imageId,
+          galleryId,
+          originalFilename: "dance-floor.png",
+          declaredMimeType: "image/png",
+          declaredByteSize: 2_048,
+          mediaKind: "image",
+          mimeType: "image/jpeg",
+          byteSize: 1_024,
+          originalByteSize: 2_048,
+          width: 800,
+          height: 600,
+          createdAt: new Date("2026-07-18T12:00:00.000Z"),
+          readyAt: new Date("2026-07-18T12:01:00.000Z"),
+          originalUrl: `/admin/galleries/${galleryId}/media/${imageId}/original`,
+          displayUrl: `/admin/galleries/${galleryId}/media/${imageId}/display`,
+          thumbnailUrl: `/admin/galleries/${galleryId}/media/${imageId}/thumbnail`,
+          downloadUrl: `/admin/galleries/${galleryId}/media/${imageId}/download`,
+        },
+        {
+          id: videoId,
+          galleryId,
+          originalFilename: "first-dance.mp4",
+          declaredMimeType: "video/mp4",
+          declaredByteSize: 3_072,
+          mediaKind: "video",
+          mimeType: "video/mp4",
+          byteSize: 3_072,
+          originalByteSize: 3_072,
+          width: null,
+          height: null,
+          createdAt: new Date("2026-07-18T12:02:00.000Z"),
+          readyAt: new Date("2026-07-18T12:03:00.000Z"),
+          originalUrl: `/admin/galleries/${galleryId}/media/${videoId}/video`,
+          displayUrl: `/admin/galleries/${galleryId}/media/${videoId}/video`,
+          thumbnailUrl: null,
+          downloadUrl: `/admin/galleries/${galleryId}/media/${videoId}/download`,
+        },
+      ],
+      nextCursor: "next-cursor",
+    });
 
     const html = renderToStaticMarkup(
       await GalleryAdminPage({ params: Promise.resolve({ id: galleryId }) }),
@@ -117,6 +120,8 @@ describe("GalleryAdminPage media", () => {
     expect(html).toContain("Image · 800×600 · 2 kB");
     expect(html).toContain("Download original dance-floor.png");
     expect(html).toContain("using 4 kB");
+    expect(html).toContain("Next media page");
+    expect(html).toContain("next-cursor");
     expect(html).not.toContain("Delete media");
     expect(html).not.toContain("autoplay");
     expect(html).not.toMatch(r2CredentialUrlPattern);

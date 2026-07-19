@@ -25,10 +25,13 @@ export const metadata = {
 
 export default async function GuestGalleryPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ slug: string }>;
+  searchParams?: Promise<{ [key: string]: string | string[] | undefined }>;
 }) {
   const { slug } = await params;
+  const cursor = await getReadyMediaCursor(searchParams);
   const context = await getAuthorizedGuestContext(slug);
 
   if (!context) {
@@ -36,11 +39,13 @@ export default async function GuestGalleryPage({
   }
 
   const { gallery, session } = context;
-  const readyMedia = await listReadyMediaForGuestGallery({
+  const readyMediaPage = await listReadyMediaForGuestGallery({
     galleryId: gallery.id,
     slug: gallery.slug,
     accessVersion: session.accessVersion,
+    ...(cursor === undefined ? {} : { cursor }),
   });
+  const readyMedia = readyMediaPage.items;
 
   return (
     <main className="mx-auto flex min-h-dvh w-full max-w-5xl flex-col px-6 py-8 sm:px-10 sm:py-10">
@@ -102,30 +107,63 @@ export default async function GuestGalleryPage({
                 Shared media
               </h2>
               <p className="mt-1 text-sm text-muted-foreground">
-                {readyMedia.length} ready {readyMedia.length === 1 ? "item" : "items"}
+                Showing {readyMedia.length} ready {readyMedia.length === 1 ? "item" : "items"}
               </p>
             </div>
           </div>
           <GalleryMediaViewer items={readyMedia.map(toGalleryMediaViewerItem)} />
+          {readyMediaPage.nextCursor ? (
+            <nav className="mt-6 flex justify-center" aria-label="Gallery media pagination">
+              <Link
+                href={{
+                  pathname: `/g/${gallery.slug}`,
+                  query: { cursor: readyMediaPage.nextCursor },
+                }}
+                className={buttonVariants({ variant: "outline" })}
+                aria-label={`Next media page for ${gallery.name}`}
+              >
+                Next media page
+              </Link>
+            </nav>
+          ) : null}
         </section>
       ) : (
         <Card className="mb-12 border-dashed bg-card/70 py-12 text-center sm:py-16">
           <CardHeader>
             <Images aria-hidden="true" className="mx-auto size-10 text-primary" />
-            <CardTitle className="mt-3 text-xl">No media yet</CardTitle>
+            <CardTitle className="mt-3 text-xl">
+              {cursor === undefined ? "No media yet" : "No media on this page"}
+            </CardTitle>
             <CardDescription>
-              Photos and videos shared by guests will appear together in this gallery.
+              {cursor === undefined
+                ? "Photos and videos shared by guests will appear together in this gallery."
+                : "Return to the first media page to continue browsing this gallery."}
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <Link href="/" className={buttonVariants({ variant: "outline" })}>
-              Enter another gallery
+            <Link
+              href={cursor === undefined ? "/" : `/g/${gallery.slug}`}
+              className={buttonVariants({ variant: "outline" })}
+            >
+              {cursor === undefined ? "Enter another gallery" : "First media page"}
             </Link>
           </CardContent>
         </Card>
       )}
     </main>
   );
+}
+
+async function getReadyMediaCursor(
+  searchParams?: Promise<{ [key: string]: string | string[] | undefined }>,
+) {
+  const cursor = searchParams ? (await searchParams).cursor : undefined;
+
+  if (cursor === undefined || typeof cursor === "string") {
+    return cursor;
+  }
+
+  return "";
 }
 
 function toGalleryMediaViewerItem(media: GalleryMediaViewerItem) {

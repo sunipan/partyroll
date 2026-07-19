@@ -6,6 +6,7 @@ import {
   resolveMediaAssetVariant,
   type MediaAssetVariant,
 } from "@/lib/media-assets";
+import type { ReadyMediaPage } from "./ready-media-pagination";
 
 import { deleteUploadObjects, getReadyMediaObjectKeys } from "./objects";
 import {
@@ -60,35 +61,43 @@ export async function listReadyMediaForGuestGallery(input: {
   galleryId: string;
   slug: string;
   accessVersion: number;
-}): Promise<ReadyMediaView[]> {
-  const media = await listReadyMediaForGuest(input);
+  cursor?: string;
+}): Promise<ReadyMediaPage<ReadyMediaView>> {
+  const page = await listReadyMediaForGuest(input);
 
-  return media.map((item) =>
-    createReadyMediaView(item, (variant) =>
-      getGuestMediaAssetPath({
-        slug: input.slug,
-        mediaId: item.id,
-        variant,
-      }),
+  return {
+    ...page,
+    items: page.items.map((item) =>
+      createReadyMediaView(item, (variant) =>
+        getGuestMediaAssetPath({
+          slug: input.slug,
+          mediaId: item.id,
+          variant,
+        }),
+      ),
     ),
-  );
+  };
 }
 
 export async function listReadyMediaForOwnerGallery(input: {
   ownerClerkId: string;
   galleryId: string;
-}): Promise<ReadyMediaView[]> {
-  const media = await listReadyMediaForOwner(input);
+  cursor?: string;
+}): Promise<ReadyMediaPage<ReadyMediaView>> {
+  const page = await listReadyMediaForOwner(input);
 
-  return media.map((item) =>
-    createReadyMediaView(item, (variant) =>
-      getAdminMediaAssetPath({
-        galleryId: input.galleryId,
-        mediaId: item.id,
-        variant,
-      }),
+  return {
+    ...page,
+    items: page.items.map((item) =>
+      createReadyMediaView(item, (variant) =>
+        getAdminMediaAssetPath({
+          galleryId: input.galleryId,
+          mediaId: item.id,
+          variant,
+        }),
+      ),
     ),
-  );
+  };
 }
 
 export async function deleteReadyMediaForOwner({

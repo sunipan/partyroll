@@ -31,6 +31,49 @@ function createReservationIdentity() {
   };
 }
 
+function createOrderedUuidFactory() {
+  const prefix = randomUUID().slice(0, 24);
+
+  return (sequence: number) => `${prefix}${sequence.toString(16).padStart(12, "0")}`;
+}
+
+function photoFixture({
+  id = randomUUID(),
+  galleryId,
+  status = "ready",
+  createdAt,
+}: {
+  id?: string;
+  galleryId: string;
+  status?: "ready" | "pending";
+  createdAt: Date;
+}) {
+  const ready = status === "ready";
+
+  return {
+    id,
+    galleryId,
+    status,
+    idempotencyKey: randomUUID(),
+    uploaderSessionHash: sessionHash,
+    quarantineObjectKey: `quarantine/${galleryId}/${id}`,
+    declaredMimeType: "image/jpeg",
+    originalFilename: `${id}.jpg`,
+    mediaKind: "image" as const,
+    originalObjectKey: `assets/${galleryId}/${id}/original.jpg`,
+    displayObjectKey: `assets/${galleryId}/${id}/display.jpg`,
+    thumbnailObjectKey: `assets/${galleryId}/${id}/thumbnail.jpg`,
+    declaredByteSize: byteSize,
+    mimeType: ready ? "image/jpeg" : null,
+    byteSize: ready ? byteSize : null,
+    width: ready ? 800 : null,
+    height: ready ? 600 : null,
+    reservationExpiresAt: new Date("2026-07-18T12:30:00.000Z"),
+    createdAt,
+    readyAt: ready ? new Date(createdAt.getTime() + 60_000) : null,
+  };
+}
+
 describe("photo upload reservations", () => {
   beforeAll(async () => {
     ({ db } = await import("@/db"));
@@ -227,8 +270,8 @@ describe("photo upload reservations", () => {
       slug: openGallerySlug,
       accessVersion: 1,
     });
-    expect(guestMedia.map((media) => media.id)).toContain(photo.id);
-    expect(guestMedia.find((media) => media.id === photo.id)).toMatchObject({
+    expect(guestMedia.items.map((media) => media.id)).toContain(photo.id);
+    expect(guestMedia.items.find((media) => media.id === photo.id)).toMatchObject({
       declaredByteSize: byteSize,
       byteSize: 1024 + byteSize,
     });
@@ -239,30 +282,206 @@ describe("photo upload reservations", () => {
         slug: closedGallerySlug,
         accessVersion: 1,
       }),
-    ).resolves.toEqual([]);
+    ).resolves.toEqual({ items: [], nextCursor: null });
     await expect(
       uploadQueries.listReadyMediaForGuest({
         galleryId: openGalleryId,
         slug: openGallerySlug,
         accessVersion: 2,
       }),
-    ).resolves.toEqual([]);
+    ).resolves.toEqual({ items: [], nextCursor: null });
     await expect(
       uploadQueries.listReadyMediaForOwner({
         ownerClerkId: `${owner}-other`,
         galleryId: openGalleryId,
       }),
-    ).resolves.toEqual([]);
+    ).resolves.toEqual({ items: [], nextCursor: null });
 
     const ownerMedia = await uploadQueries.listReadyMediaForOwner({
       ownerClerkId: owner,
       galleryId: openGalleryId,
     });
-    expect(ownerMedia.map((media) => media.id)).toContain(photo.id);
-    expect(ownerMedia.find((media) => media.id === photo.id)).toMatchObject({
+    expect(ownerMedia.items.map((media) => media.id)).toContain(photo.id);
+    expect(ownerMedia.items.find((media) => media.id === photo.id)).toMatchObject({
       declaredByteSize: byteSize,
       byteSize: 1024 + byteSize,
     });
+  });
+
+  it("paginates ready media deterministically without duplicates or skipped rows", async () => {
+    const [pageGallery, emptyGallery, otherOwnerGallery, archivedGallery] =
+      await Promise.all([
+        galleryQueries.createGalleryForOwner(owner, {
+          name: `Pagination ${randomUUID()}`,
+          eventDate: undefined,
+        }),
+        galleryQueries.createGalleryForOwner(owner, {
+          name: `Pagination Empty ${randomUUID()}`,
+          eventDate: undefined,
+        }),
+        galleryQueries.createGalleryForOwner(`${owner}-pagination-other`, {
+          name: `Pagination Other ${randomUUID()}`,
+          eventDate: undefined,
+        }),
+        galleryQueries.createGalleryForOwner(owner, {
+          name: `Pagination Archived ${randomUUID()}`,
+          eventDate: undefined,
+        }),
+      ]);
+    const orderedUuid = createOrderedUuidFactory();
+    const newestId = orderedUuid(5);
+    const tieHighId = orderedUuid(3);
+    const tieLowId = orderedUuid(2);
+    const oldestId = orderedUuid(1);
+    const pendingId = orderedUuid(6);
+    const otherOwnerId = orderedUuid(7);
+    const archivedId = orderedUuid(8);
+
+    try {
+      await db
+        .update(galleries)
+        .set({ status: "archived" })
+        .where(eq(galleries.id, archivedGallery.id));
+
+      await db.insert(photos).values([
+        photoFixture({
+          id: newestId,
+          galleryId: pageGallery.id,
+          createdAt: new Date("2026-07-18T12:03:00.000Z"),
+        }),
+        photoFixture({
+          id: tieHighId,
+          galleryId: pageGallery.id,
+          createdAt: new Date("2026-07-18T12:02:00.000Z"),
+        }),
+        photoFixture({
+          id: tieLowId,
+          galleryId: pageGallery.id,
+          createdAt: new Date("2026-07-18T12:02:00.000Z"),
+        }),
+        photoFixture({
+          id: oldestId,
+          galleryId: pageGallery.id,
+          createdAt: new Date("2026-07-18T12:01:00.000Z"),
+        }),
+        photoFixture({
+          id: pendingId,
+          galleryId: pageGallery.id,
+          status: "pending",
+          createdAt: new Date("2026-07-18T12:04:00.000Z"),
+        }),
+        photoFixture({
+          id: otherOwnerId,
+          galleryId: otherOwnerGallery.id,
+          createdAt: new Date("2026-07-18T12:05:00.000Z"),
+        }),
+        photoFixture({
+          id: archivedId,
+          galleryId: archivedGallery.id,
+          createdAt: new Date("2026-07-18T12:06:00.000Z"),
+        }),
+      ]);
+
+      const firstGuestPage = await uploadQueries.listReadyMediaForGuest({
+        galleryId: pageGallery.id,
+        slug: pageGallery.slug,
+        accessVersion: pageGallery.accessVersion,
+        pageSize: 2,
+      });
+      const secondGuestPage = await uploadQueries.listReadyMediaForGuest({
+        galleryId: pageGallery.id,
+        slug: pageGallery.slug,
+        accessVersion: pageGallery.accessVersion,
+        cursor: firstGuestPage.nextCursor ?? undefined,
+        pageSize: 2,
+      });
+      const allGuestIds = [
+        ...firstGuestPage.items.map((media) => media.id),
+        ...secondGuestPage.items.map((media) => media.id),
+      ];
+
+      expect(firstGuestPage.items.map((media) => media.id)).toEqual([
+        newestId,
+        tieHighId,
+      ]);
+      expect(secondGuestPage.items.map((media) => media.id)).toEqual([
+        tieLowId,
+        oldestId,
+      ]);
+      expect(secondGuestPage.nextCursor).toBeNull();
+      expect(new Set(allGuestIds).size).toBe(allGuestIds.length);
+      expect(allGuestIds).toEqual([newestId, tieHighId, tieLowId, oldestId]);
+      expect(allGuestIds).not.toContain(pendingId);
+      expect(allGuestIds).not.toContain(otherOwnerId);
+      expect(allGuestIds).not.toContain(archivedId);
+
+      await expect(
+        uploadQueries.listReadyMediaForGuest({
+          galleryId: pageGallery.id,
+          slug: pageGallery.slug,
+          accessVersion: pageGallery.accessVersion + 1,
+          pageSize: 2,
+        }),
+      ).resolves.toEqual({ items: [], nextCursor: null });
+      await expect(
+        uploadQueries.listReadyMediaForGuest({
+          galleryId: archivedGallery.id,
+          slug: archivedGallery.slug,
+          accessVersion: archivedGallery.accessVersion,
+          pageSize: 2,
+        }),
+      ).resolves.toEqual({ items: [], nextCursor: null });
+      await expect(
+        uploadQueries.listReadyMediaForGuest({
+          galleryId: emptyGallery.id,
+          slug: emptyGallery.slug,
+          accessVersion: emptyGallery.accessVersion,
+          pageSize: 2,
+        }),
+      ).resolves.toEqual({ items: [], nextCursor: null });
+      await expect(
+        uploadQueries.listReadyMediaForGuest({
+          galleryId: pageGallery.id,
+          slug: pageGallery.slug,
+          accessVersion: pageGallery.accessVersion,
+          cursor: "invalid-cursor",
+          pageSize: 2,
+        }),
+      ).resolves.toEqual({ items: [], nextCursor: null });
+
+      const firstOwnerPage = await uploadQueries.listReadyMediaForOwner({
+        ownerClerkId: owner,
+        galleryId: pageGallery.id,
+        pageSize: 2,
+      });
+      const secondOwnerPage = await uploadQueries.listReadyMediaForOwner({
+        ownerClerkId: owner,
+        galleryId: pageGallery.id,
+        cursor: firstOwnerPage.nextCursor ?? undefined,
+        pageSize: 2,
+      });
+
+      expect([
+        ...firstOwnerPage.items.map((media) => media.id),
+        ...secondOwnerPage.items.map((media) => media.id),
+      ]).toEqual([newestId, tieHighId, tieLowId, oldestId]);
+      await expect(
+        uploadQueries.listReadyMediaForOwner({
+          ownerClerkId: `${owner}-other`,
+          galleryId: pageGallery.id,
+          pageSize: 2,
+        }),
+      ).resolves.toEqual({ items: [], nextCursor: null });
+    } finally {
+      await db.delete(galleries).where(
+        inArray(galleries.id, [
+          pageGallery.id,
+          emptyGallery.id,
+          otherOwnerGallery.id,
+          archivedGallery.id,
+        ]),
+      );
+    }
   });
 
   it(

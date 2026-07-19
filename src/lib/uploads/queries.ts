@@ -1,6 +1,6 @@
 import "server-only";
 
-import { and, desc, eq, inArray, isNull, lte, ne, or, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, lt, lte, ne, or, sql } from "drizzle-orm";
 
 import { db } from "@/db";
 import { galleries, photos, type Photo } from "@/db/schema";
@@ -24,6 +24,13 @@ import {
   UPLOAD_CLEANUP_GRACE_MILLISECONDS,
   UPLOAD_WORK_LEASE_MILLISECONDS,
 } from "./security-core";
+import {
+  createReadyMediaPage,
+  decodeReadyMediaCursor,
+  normalizeReadyMediaPageSize,
+  type ReadyMediaCursor,
+  type ReadyMediaPage,
+} from "./ready-media-pagination";
 
 export type UploadReservationResult =
   | { outcome: "reserved"; photo: Photo }
@@ -76,6 +83,7 @@ const readyMediaColumns = {
   thumbnailObjectKey: photos.thumbnailObjectKey,
   createdAt: photos.createdAt,
   readyAt: photos.readyAt,
+  cursorCreatedAt: sql<string>`to_char(${photos.createdAt} at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`,
 };
 
 export type ReadyMedia = Pick<
@@ -97,6 +105,15 @@ export type ReadyMedia = Pick<
   | "createdAt"
   | "readyAt"
 >;
+
+type ReadyMediaRow = ReadyMedia & {
+  cursorCreatedAt: string;
+};
+
+type ReadyMediaListInput = {
+  cursor?: string;
+  pageSize?: number;
+};
 
 export async function reservePhotoUpload({
   galleryId,
@@ -273,12 +290,20 @@ export async function listReadyMediaForGuest({
   galleryId,
   slug,
   accessVersion,
+  cursor,
+  pageSize: requestedPageSize,
 }: {
   galleryId: string;
   slug: string;
   accessVersion: number;
-}): Promise<ReadyMedia[]> {
-  return db
+} & ReadyMediaListInput): Promise<ReadyMediaPage<ReadyMedia>> {
+  const decodedCursor = parseReadyMediaCursor(cursor);
+  if (decodedCursor === false) {
+    return { items: [], nextCursor: null };
+  }
+
+  const pageSize = normalizeReadyMediaPageSize(requestedPageSize);
+  const rows = await db
     .select(readyMediaColumns)
     .from(photos)
     .innerJoin(galleries, eq(photos.galleryId, galleries.id))
@@ -290,19 +315,31 @@ export async function listReadyMediaForGuest({
         eq(galleries.slug, slug),
         eq(galleries.accessVersion, accessVersion),
         ne(galleries.status, "archived"),
+        ...(decodedCursor ? [getReadyMediaCursorPredicate(decodedCursor)] : []),
       ),
     )
-    .orderBy(desc(photos.readyAt), desc(photos.createdAt));
+    .orderBy(desc(photos.createdAt), desc(photos.id))
+    .limit(pageSize + 1);
+
+  return createReadyMediaResult(rows, pageSize);
 }
 
 export async function listReadyMediaForOwner({
   ownerClerkId,
   galleryId,
+  cursor,
+  pageSize: requestedPageSize,
 }: {
   ownerClerkId: string;
   galleryId: string;
-}): Promise<ReadyMedia[]> {
-  return db
+} & ReadyMediaListInput): Promise<ReadyMediaPage<ReadyMedia>> {
+  const decodedCursor = parseReadyMediaCursor(cursor);
+  if (decodedCursor === false) {
+    return { items: [], nextCursor: null };
+  }
+
+  const pageSize = normalizeReadyMediaPageSize(requestedPageSize);
+  const rows = await db
     .select(readyMediaColumns)
     .from(photos)
     .innerJoin(galleries, eq(photos.galleryId, galleries.id))
@@ -312,9 +349,66 @@ export async function listReadyMediaForOwner({
         eq(photos.status, "ready"),
         eq(galleries.id, galleryId),
         eq(galleries.ownerClerkId, ownerClerkId),
+        ...(decodedCursor ? [getReadyMediaCursorPredicate(decodedCursor)] : []),
       ),
     )
-    .orderBy(desc(photos.readyAt), desc(photos.createdAt));
+    .orderBy(desc(photos.createdAt), desc(photos.id))
+    .limit(pageSize + 1);
+
+  return createReadyMediaResult(rows, pageSize);
+}
+
+function parseReadyMediaCursor(cursor: string | undefined) {
+  if (cursor === undefined) {
+    return null;
+  }
+
+  return decodeReadyMediaCursor(cursor) ?? false;
+}
+
+function getReadyMediaCursorPredicate(cursor: ReadyMediaCursor) {
+  const cursorCreatedAt = sql`${cursor.createdAt}::timestamptz`;
+
+  return or(
+    lt(photos.createdAt, cursorCreatedAt),
+    and(eq(photos.createdAt, cursorCreatedAt), lt(photos.id, cursor.id)),
+  )!;
+}
+
+function createReadyMediaResult(
+  rows: ReadyMediaRow[],
+  pageSize: number,
+): ReadyMediaPage<ReadyMedia> {
+  const page = createReadyMediaPage(rows, pageSize, (row) => ({
+    createdAt: row.cursorCreatedAt,
+    id: row.id,
+  }));
+
+  return {
+    items: page.items.map(stripReadyMediaCursorCreatedAt),
+    nextCursor: page.nextCursor,
+  };
+}
+
+function stripReadyMediaCursorCreatedAt(row: ReadyMediaRow): ReadyMedia {
+  return {
+    id: row.id,
+    galleryId: row.galleryId,
+    quarantineObjectKey: row.quarantineObjectKey,
+    originalFilename: row.originalFilename,
+    declaredMimeType: row.declaredMimeType,
+    declaredByteSize: row.declaredByteSize,
+    mediaKind: row.mediaKind,
+    mimeType: row.mimeType,
+    byteSize: row.byteSize,
+    width: row.width,
+    height: row.height,
+    originalObjectKey: row.originalObjectKey,
+    displayObjectKey: row.displayObjectKey,
+    thumbnailObjectKey: row.thumbnailObjectKey,
+    createdAt: row.createdAt,
+    readyAt: row.readyAt,
+  };
 }
 
 export async function getReadyMediaForOwner({
@@ -341,7 +435,7 @@ export async function getReadyMediaForOwner({
     )
     .limit(1);
 
-  return photo ?? null;
+  return photo ? stripReadyMediaCursorCreatedAt(photo) : null;
 }
 
 export async function deleteReadyMediaRecordForOwner({

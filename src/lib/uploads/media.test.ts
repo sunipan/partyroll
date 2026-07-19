@@ -69,8 +69,14 @@ const media = {
 describe("ready media delivery and deletion", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    vi.mocked(listReadyMediaForGuest).mockResolvedValue([media]);
-    vi.mocked(listReadyMediaForOwner).mockResolvedValue([media]);
+    vi.mocked(listReadyMediaForGuest).mockResolvedValue({
+      items: [media],
+      nextCursor: null,
+    });
+    vi.mocked(listReadyMediaForOwner).mockResolvedValue({
+      items: [media],
+      nextCursor: null,
+    });
     vi.mocked(getReadyMediaForOwner).mockResolvedValue(media);
     vi.mocked(deleteUploadObjects).mockResolvedValue(undefined);
     vi.mocked(deleteReadyMediaRecordForOwner).mockResolvedValue({
@@ -91,11 +97,12 @@ describe("ready media delivery and deletion", () => {
   });
 
   it("creates same-origin delivery paths only after guest scope is checked", async () => {
-    const [view] = await listReadyMediaForGuestGallery({
+    const page = await listReadyMediaForGuestGallery({
       galleryId: media.galleryId,
       slug: "test-gallery",
       accessVersion: 3,
     });
+    const [view] = page.items;
 
     expect(view).toMatchObject(
       {
@@ -122,10 +129,11 @@ describe("ready media delivery and deletion", () => {
   });
 
   it("creates owner-authorized admin delivery paths without R2 credentials", async () => {
-    const [view] = await listReadyMediaForOwnerGallery({
+    const page = await listReadyMediaForOwnerGallery({
       ownerClerkId: "owner-1",
       galleryId: media.galleryId,
     });
+    const [view] = page.items;
 
     expect(view).toMatchObject({
       originalByteSize: 1024,
@@ -143,12 +151,15 @@ describe("ready media delivery and deletion", () => {
   });
 
   it("fails closed when ready image metadata is incomplete", async () => {
-    vi.mocked(listReadyMediaForGuest).mockResolvedValueOnce([
-      {
-        ...media,
-        thumbnailObjectKey: null,
-      },
-    ]);
+    vi.mocked(listReadyMediaForGuest).mockResolvedValueOnce({
+      items: [
+        {
+          ...media,
+          thumbnailObjectKey: null,
+        },
+      ],
+      nextCursor: null,
+    });
 
     await expect(
       listReadyMediaForGuestGallery({
@@ -160,12 +171,15 @@ describe("ready media delivery and deletion", () => {
   });
 
   it("fails closed when original declared size metadata is missing", async () => {
-    vi.mocked(listReadyMediaForGuest).mockResolvedValueOnce([
-      {
-        ...media,
-        declaredByteSize: null,
-      } as unknown as ReadyMedia,
-    ]);
+    vi.mocked(listReadyMediaForGuest).mockResolvedValueOnce({
+      items: [
+        {
+          ...media,
+          declaredByteSize: null,
+        } as unknown as ReadyMedia,
+      ],
+      nextCursor: null,
+    });
 
     await expect(
       listReadyMediaForGuestGallery({
@@ -177,18 +191,21 @@ describe("ready media delivery and deletion", () => {
   });
 
   it("fails closed when media kind and MIME metadata disagree", async () => {
-    vi.mocked(listReadyMediaForGuest).mockResolvedValueOnce([
-      {
-        ...media,
-        mediaKind: "video",
-        declaredMimeType: "image/jpeg",
-        mimeType: "image/jpeg",
-        displayObjectKey: null,
-        thumbnailObjectKey: null,
-        width: null,
-        height: null,
-      },
-    ]);
+    vi.mocked(listReadyMediaForGuest).mockResolvedValueOnce({
+      items: [
+        {
+          ...media,
+          mediaKind: "video",
+          declaredMimeType: "image/jpeg",
+          mimeType: "image/jpeg",
+          displayObjectKey: null,
+          thumbnailObjectKey: null,
+          width: null,
+          height: null,
+        },
+      ],
+      nextCursor: null,
+    });
 
     await expect(
       listReadyMediaForGuestGallery({

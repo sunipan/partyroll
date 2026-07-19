@@ -33,6 +33,7 @@ const dateFormatter = new Intl.DateTimeFormat("en", {
 
 type GalleryPageProps = {
   params: Promise<{ id: string }>;
+  searchParams?: Promise<{ [key: string]: string | string[] | undefined }>;
 };
 
 export async function generateMetadata({
@@ -51,9 +52,13 @@ export async function generateMetadata({
   return { title: gallery?.name ?? "Gallery" };
 }
 
-export default async function GalleryAdminPage({ params }: GalleryPageProps) {
+export default async function GalleryAdminPage({
+  params,
+  searchParams,
+}: GalleryPageProps) {
   const { userId } = await requireAdmin();
   const { id } = await params;
+  const cursor = await getReadyMediaCursor(searchParams);
   const parsedId = galleryIdSchema.safeParse(id);
 
   if (!parsedId.success) {
@@ -68,10 +73,12 @@ export default async function GalleryAdminPage({ params }: GalleryPageProps) {
 
   const invitation = getGalleryInvitation(gallery);
   const qrPath = `/admin/galleries/${gallery.id}/qr?v=${gallery.accessVersion}`;
-  const readyMedia = await listReadyMediaForOwnerGallery({
+  const readyMediaPage = await listReadyMediaForOwnerGallery({
     ownerClerkId: userId,
     galleryId: gallery.id,
+    ...(cursor === undefined ? {} : { cursor }),
   });
+  const readyMedia = readyMediaPage.items;
 
   return (
     <main className="mx-auto flex min-h-dvh w-full max-w-5xl flex-col px-6 py-8 sm:px-10 sm:py-10">
@@ -163,17 +170,43 @@ export default async function GalleryAdminPage({ params }: GalleryPageProps) {
             <CardTitle>Uploaded media</CardTitle>
             <CardDescription className="leading-6">
               {readyMedia.length === 0
-                ? "Ready uploads will appear here once guests add media."
-                : `${readyMedia.length} ready ${readyMedia.length === 1 ? "item" : "items"} using ${formatByteSize(gallery.storageBytes)}.`}
+                ? cursor === undefined
+                  ? "Ready uploads will appear here once guests add media."
+                  : "No ready uploads were found on this media page."
+                : `Showing ${readyMedia.length} ready ${readyMedia.length === 1 ? "item" : "items"} using ${formatByteSize(gallery.storageBytes)}.`}
             </CardDescription>
           </CardHeader>
           <CardContent>
             {readyMedia.length === 0 ? (
-              <div className="rounded-lg border border-dashed bg-muted/30 p-6 text-sm text-muted-foreground">
-                No uploaded media yet.
+              <div className="space-y-4 rounded-lg border border-dashed bg-muted/30 p-6 text-sm text-muted-foreground">
+                <p>{cursor === undefined ? "No uploaded media yet." : "No media on this page."}</p>
+                {cursor === undefined ? null : (
+                  <Link
+                    href={`/admin/galleries/${gallery.id}`}
+                    className={buttonVariants({ variant: "outline", size: "sm" })}
+                  >
+                    First media page
+                  </Link>
+                )}
               </div>
             ) : (
-              <GalleryMediaViewer items={readyMedia.map(toGalleryMediaViewerItem)} />
+              <>
+                <GalleryMediaViewer items={readyMedia.map(toGalleryMediaViewerItem)} />
+                {readyMediaPage.nextCursor ? (
+                  <nav className="mt-6 flex justify-center" aria-label="Uploaded media pagination">
+                    <Link
+                      href={{
+                        pathname: `/admin/galleries/${gallery.id}`,
+                        query: { cursor: readyMediaPage.nextCursor },
+                      }}
+                      className={buttonVariants({ variant: "outline" })}
+                      aria-label={`Next uploaded media page for ${gallery.name}`}
+                    >
+                      Next media page
+                    </Link>
+                  </nav>
+                ) : null}
+              </>
             )}
           </CardContent>
         </Card>
@@ -198,6 +231,18 @@ export default async function GalleryAdminPage({ params }: GalleryPageProps) {
       </section>
     </main>
   );
+}
+
+async function getReadyMediaCursor(
+  searchParams?: Promise<{ [key: string]: string | string[] | undefined }>,
+) {
+  const cursor = searchParams ? (await searchParams).cursor : undefined;
+
+  if (cursor === undefined || typeof cursor === "string") {
+    return cursor;
+  }
+
+  return "";
 }
 
 function toGalleryMediaViewerItem(media: GalleryMediaViewerItem) {

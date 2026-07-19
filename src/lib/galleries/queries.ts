@@ -8,6 +8,7 @@ import { db } from "@/db";
 import { galleries, type Gallery } from "@/db/schema";
 
 import {
+  buildCollisionGallerySlug,
   canTransitionGallery,
   slugifyGalleryName,
   type CreateGalleryInput,
@@ -49,7 +50,8 @@ export async function createGalleryForOwner(
   const baseSlug = slugifyGalleryName(input.name);
 
   for (let attempt = 1; attempt <= 100; attempt += 1) {
-    const slug = attempt === 1 ? baseSlug : `${baseSlug}-${attempt}`;
+    const slug =
+      attempt === 1 ? baseSlug : buildCollisionGallerySlug(baseSlug, `${attempt}`);
     const [gallery] = await db
       .insert(galleries)
       .values({
@@ -71,7 +73,7 @@ export async function createGalleryForOwner(
     .values({
       ownerClerkId,
       name: input.name,
-      slug: `${baseSlug}-${randomUUID().slice(0, 8)}`,
+      slug: buildCollisionGallerySlug(baseSlug, randomUUID().slice(0, 8)),
       eventDate: input.eventDate,
     })
     .returning();

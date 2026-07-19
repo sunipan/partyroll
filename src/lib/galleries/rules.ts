@@ -26,6 +26,7 @@ export const createGalleryInputSchema = z.object({
 export type CreateGalleryInput = z.infer<typeof createGalleryInputSchema>;
 
 export const galleryIdSchema = z.uuid();
+export const MAX_GALLERY_SLUG_LENGTH = 64;
 
 const allowedTransitions: Record<GalleryStatus, readonly GalleryStatus[]> = {
   open: ["closed", "archived"],
@@ -54,10 +55,26 @@ export function slugifyGalleryName(name: string): string {
     .replace(/&/g, " ")
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "")
-    .slice(0, 64)
+    .slice(0, MAX_GALLERY_SLUG_LENGTH)
     .replace(/-+$/g, "");
 
   return slug || "gallery";
+}
+
+export function buildCollisionGallerySlug(
+  baseSlug: string,
+  suffix: string,
+): string {
+  const suffixSegment = `-${suffix}`;
+  const maxBaseLength = MAX_GALLERY_SLUG_LENGTH - suffixSegment.length;
+
+  if (maxBaseLength < 1) {
+    throw new Error("Collision slug suffix must leave room for a base slug.");
+  }
+
+  const truncatedBase = baseSlug.slice(0, maxBaseLength).replace(/-+$/g, "");
+
+  return `${truncatedBase || "gallery"}${suffixSegment}`;
 }
 
 function isCalendarDate(value: string): boolean {

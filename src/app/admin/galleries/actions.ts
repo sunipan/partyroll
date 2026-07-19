@@ -16,6 +16,7 @@ import {
   galleryIdSchema,
   galleryStatusSchema,
 } from "@/lib/galleries/rules";
+import { deleteReadyMediaForOwner } from "@/lib/uploads/media";
 
 export async function createGalleryAction(
   _previousState: CreateGalleryFormState,
@@ -104,5 +105,35 @@ export async function regenerateGalleryAccessAction(formData: FormData) {
     redirect("/admin");
   }
 
+  revalidatePath(`/admin/galleries/${input.data.galleryId}`);
+}
+
+const deleteMediaSchema = z.object({
+  galleryId: galleryIdSchema,
+  photoId: z.uuid(),
+});
+
+export async function deleteGalleryMediaAction(formData: FormData) {
+  const { userId } = await requireAdmin();
+  const input = deleteMediaSchema.safeParse({
+    galleryId: formData.get("galleryId"),
+    photoId: formData.get("photoId"),
+  });
+
+  if (!input.success) {
+    redirect("/admin");
+  }
+
+  const result = await deleteReadyMediaForOwner({
+    ownerClerkId: userId,
+    galleryId: input.data.galleryId,
+    photoId: input.data.photoId,
+  });
+
+  if (result.outcome === "not-found") {
+    redirect(`/admin/galleries/${input.data.galleryId}`);
+  }
+
+  revalidatePath("/admin");
   revalidatePath(`/admin/galleries/${input.data.galleryId}`);
 }

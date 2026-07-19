@@ -7,7 +7,7 @@ import type { ReadyMedia } from "./queries";
 vi.mock("server-only", () => ({}));
 vi.mock("./objects", () => ({
   deleteUploadObjects: vi.fn(),
-  getReadyMediaObjectKeys: vi.fn(
+  getMediaDeletionObjectKeys: vi.fn(
     ({
       quarantineObjectKey,
       mediaKind,
@@ -28,23 +28,28 @@ vi.mock("./objects", () => ({
   ),
 }));
 vi.mock("./queries", () => ({
-  deleteReadyMediaRecordForOwner: vi.fn(),
-  getReadyMediaForOwner: vi.fn(),
+  claimReadyMediaDeletionForOwner: vi.fn(),
+  deletePendingMediaRecord: vi.fn(),
+  getRetryableDeletePendingMediaForOwner: vi.fn(),
   listReadyMediaForGuest: vi.fn(),
   listReadyMediaForOwner: vi.fn(),
+  recordMediaDeletionFailure: vi.fn(),
 }));
 
 import {
   deleteReadyMediaForOwner,
   listReadyMediaForGuestGallery,
   listReadyMediaForOwnerGallery,
+  retryPendingMediaDeletionForOwner,
 } from "./media";
 import { deleteUploadObjects } from "./objects";
 import {
-  deleteReadyMediaRecordForOwner,
-  getReadyMediaForOwner,
+  claimReadyMediaDeletionForOwner,
+  deletePendingMediaRecord,
+  getRetryableDeletePendingMediaForOwner,
   listReadyMediaForGuest,
   listReadyMediaForOwner,
+  recordMediaDeletionFailure,
 } from "./queries";
 
 const media = {
@@ -66,6 +71,25 @@ const media = {
   readyAt: new Date("2026-07-17T12:01:00.000Z"),
 } satisfies ReadyMedia;
 
+const claimedMedia = {
+  ...media,
+  status: "delete_pending",
+  idempotencyKey: randomUUID(),
+  uploaderSessionHash: "a".repeat(64),
+  quarantineDeletedAt: null,
+  reservationExpiresAt: new Date("2026-07-17T12:15:00.000Z"),
+  processingStartedAt: null,
+  completionAttempts: 1,
+  nextProcessingAttemptAt: null,
+  rejectedAt: null,
+  deletionRequestedAt: new Date("2026-07-17T12:02:00.000Z"),
+  deletionAccountedAt: new Date("2026-07-17T12:02:00.000Z"),
+  deletionAttempts: 0,
+  nextDeletionAttemptAt: null,
+  deletionFailedAt: null,
+  deletionFailureReason: null,
+} satisfies import("@/db/schema").Photo;
+
 describe("ready media delivery and deletion", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -77,29 +101,13 @@ describe("ready media delivery and deletion", () => {
       items: [media],
       nextCursor: null,
     });
-    vi.mocked(getReadyMediaForOwner).mockResolvedValue(media);
+    vi.mocked(claimReadyMediaDeletionForOwner).mockResolvedValue(claimedMedia);
+    vi.mocked(getRetryableDeletePendingMediaForOwner).mockResolvedValue(
+      claimedMedia,
+    );
     vi.mocked(deleteUploadObjects).mockResolvedValue(undefined);
-    vi.mocked(deleteReadyMediaRecordForOwner).mockResolvedValue({
-      ...media,
-      status: "ready",
-      idempotencyKey: randomUUID(),
-      uploaderSessionHash: "a".repeat(64),
-      quarantineObjectKey: media.quarantineObjectKey,
-      quarantineDeletedAt: null,
-      declaredMimeType: "image/jpeg",
-      declaredByteSize: 1024,
-      reservationExpiresAt: new Date("2026-07-17T12:15:00.000Z"),
-      processingStartedAt: null,
-      completionAttempts: 1,
-      nextProcessingAttemptAt: null,
-      rejectedAt: null,
-      deletionRequestedAt: null,
-      deletionAccountedAt: null,
-      deletionAttempts: 0,
-      nextDeletionAttemptAt: null,
-      deletionFailedAt: null,
-      deletionFailureReason: null,
-    });
+    vi.mocked(deletePendingMediaRecord).mockResolvedValue(claimedMedia);
+    vi.mocked(recordMediaDeletionFailure).mockResolvedValue(claimedMedia);
   });
 
   it("creates same-origin delivery paths only after guest scope is checked", async () => {
@@ -222,19 +230,23 @@ describe("ready media delivery and deletion", () => {
     ).rejects.toThrow("Ready media is missing required current metadata.");
   });
 
-  it("deletes R2 objects before removing the DB record and accounting", async () => {
+  it("claims ready media before R2 deletion and removes the row after R2 success", async () => {
+    const now = new Date("2026-07-17T12:02:00.000Z");
+
     await expect(
       deleteReadyMediaForOwner({
         ownerClerkId: "owner-1",
         galleryId: media.galleryId,
         photoId: media.id,
+        now,
       }),
     ).resolves.toMatchObject({ outcome: "deleted", media: { id: media.id } });
 
-    expect(getReadyMediaForOwner).toHaveBeenCalledWith({
+    expect(claimReadyMediaDeletionForOwner).toHaveBeenCalledWith({
       ownerClerkId: "owner-1",
       galleryId: media.galleryId,
       photoId: media.id,
+      now,
     });
     expect(deleteUploadObjects).toHaveBeenCalledWith([
       media.quarantineObjectKey,
@@ -242,19 +254,22 @@ describe("ready media delivery and deletion", () => {
       media.displayObjectKey,
       media.thumbnailObjectKey,
     ]);
-    expect(deleteReadyMediaRecordForOwner).toHaveBeenCalledWith({
-      ownerClerkId: "owner-1",
+    expect(deletePendingMediaRecord).toHaveBeenCalledWith({
       galleryId: media.galleryId,
       photoId: media.id,
     });
     expect(
+      vi.mocked(claimReadyMediaDeletionForOwner).mock.invocationCallOrder[0],
+    ).toBeLessThan(vi.mocked(deleteUploadObjects).mock.invocationCallOrder[0]);
+    expect(
       vi.mocked(deleteUploadObjects).mock.invocationCallOrder[0],
     ).toBeLessThan(
-      vi.mocked(deleteReadyMediaRecordForOwner).mock.invocationCallOrder[0],
+      vi.mocked(deletePendingMediaRecord).mock.invocationCallOrder[0],
     );
   });
 
-  it("does not update DB accounting when R2 deletion fails", async () => {
+  it("keeps delete-pending media retryable when R2 deletion fails", async () => {
+    const now = new Date("2026-07-17T12:03:00.000Z");
     vi.mocked(deleteUploadObjects).mockRejectedValueOnce(
       new Error("R2 deletion failed"),
     );
@@ -264,13 +279,20 @@ describe("ready media delivery and deletion", () => {
         ownerClerkId: "owner-1",
         galleryId: media.galleryId,
         photoId: media.id,
+        now,
       }),
-    ).rejects.toThrow("R2 deletion failed");
-    expect(deleteReadyMediaRecordForOwner).not.toHaveBeenCalled();
+    ).resolves.toMatchObject({ outcome: "retry-pending", media: { id: media.id } });
+    expect(deletePendingMediaRecord).not.toHaveBeenCalled();
+    expect(recordMediaDeletionFailure).toHaveBeenCalledWith({
+      photoId: media.id,
+      galleryId: media.galleryId,
+      failureReason: "R2 object deletion failed (Error); retry scheduled.",
+      now,
+    });
   });
 
   it("does not delete R2 objects when owner/gallery lookup fails", async () => {
-    vi.mocked(getReadyMediaForOwner).mockResolvedValueOnce(null);
+    vi.mocked(claimReadyMediaDeletionForOwner).mockResolvedValueOnce(null);
 
     await expect(
       deleteReadyMediaForOwner({
@@ -280,7 +302,33 @@ describe("ready media delivery and deletion", () => {
       }),
     ).resolves.toEqual({ outcome: "not-found" });
     expect(deleteUploadObjects).not.toHaveBeenCalled();
-    expect(deleteReadyMediaRecordForOwner).not.toHaveBeenCalled();
+    expect(deletePendingMediaRecord).not.toHaveBeenCalled();
+  });
+
+  it("retries due delete-pending media without reclaiming ready accounting", async () => {
+    const now = new Date("2026-07-17T12:04:00.000Z");
+
+    await expect(
+      retryPendingMediaDeletionForOwner({
+        ownerClerkId: "owner-1",
+        galleryId: media.galleryId,
+        photoId: media.id,
+        now,
+      }),
+    ).resolves.toMatchObject({ outcome: "deleted", media: { id: media.id } });
+
+    expect(claimReadyMediaDeletionForOwner).not.toHaveBeenCalled();
+    expect(getRetryableDeletePendingMediaForOwner).toHaveBeenCalledWith({
+      ownerClerkId: "owner-1",
+      galleryId: media.galleryId,
+      photoId: media.id,
+      now,
+    });
+    expect(deleteUploadObjects).toHaveBeenCalledTimes(1);
+    expect(deletePendingMediaRecord).toHaveBeenCalledWith({
+      galleryId: media.galleryId,
+      photoId: media.id,
+    });
   });
 });
 

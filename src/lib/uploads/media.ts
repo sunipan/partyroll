@@ -6,14 +6,17 @@ import {
   resolveMediaAssetVariant,
   type MediaAssetVariant,
 } from "@/lib/media-assets";
+import type { Photo } from "@/db/schema";
 import type { ReadyMediaPage } from "./ready-media-pagination";
 
-import { deleteUploadObjects, getReadyMediaObjectKeys } from "./objects";
+import { deleteUploadObjects, getMediaDeletionObjectKeys } from "./objects";
 import {
-  deleteReadyMediaRecordForOwner,
-  getReadyMediaForOwner,
+  claimReadyMediaDeletionForOwner,
+  deletePendingMediaRecord,
+  getRetryableDeletePendingMediaForOwner,
   listReadyMediaForGuest,
   listReadyMediaForOwner,
+  recordMediaDeletionFailure,
   type ReadyMedia,
 } from "./queries";
 
@@ -54,8 +57,11 @@ export type ReadyMediaView =
     });
 
 export type DeleteReadyMediaResult =
-  | { outcome: "deleted"; media: ReadyMedia }
+  | { outcome: "deleted"; media: Photo }
+  | { outcome: "retry-pending"; media: Photo }
   | { outcome: "not-found" };
+
+export type RetryPendingMediaDeletionResult = DeleteReadyMediaResult;
 
 export async function listReadyMediaForGuestGallery(input: {
   galleryId: string;
@@ -104,30 +110,84 @@ export async function deleteReadyMediaForOwner({
   ownerClerkId,
   galleryId,
   photoId,
+  now = new Date(),
 }: {
   ownerClerkId: string;
   galleryId: string;
   photoId: string;
+  now?: Date;
 }): Promise<DeleteReadyMediaResult> {
-  const media = await getReadyMediaForOwner({
+  const media = await claimReadyMediaDeletionForOwner({
     ownerClerkId,
     galleryId,
     photoId,
+    now,
   });
 
   if (!media) {
     return { outcome: "not-found" };
   }
 
-  await deleteUploadObjects(getReadyMediaObjectKeys(media));
+  return deleteClaimedMedia(media, now);
+}
 
-  const deleted = await deleteReadyMediaRecordForOwner({
+export async function retryPendingMediaDeletionForOwner({
+  ownerClerkId,
+  galleryId,
+  photoId,
+  now = new Date(),
+}: {
+  ownerClerkId: string;
+  galleryId: string;
+  photoId: string;
+  now?: Date;
+}): Promise<RetryPendingMediaDeletionResult> {
+  const media = await getRetryableDeletePendingMediaForOwner({
     ownerClerkId,
     galleryId,
     photoId,
+    now,
   });
 
-  return deleted ? { outcome: "deleted", media } : { outcome: "not-found" };
+  if (!media) {
+    return { outcome: "not-found" };
+  }
+
+  return deleteClaimedMedia(media, now);
+}
+
+async function deleteClaimedMedia(
+  media: Photo,
+  now: Date,
+): Promise<DeleteReadyMediaResult> {
+  try {
+    await deleteUploadObjects(getMediaDeletionObjectKeys(media));
+  } catch (error) {
+    await recordMediaDeletionFailure({
+      photoId: media.id,
+      galleryId: media.galleryId,
+      failureReason: getSafeDeletionFailureReason(error),
+      now,
+    });
+
+    return { outcome: "retry-pending", media };
+  }
+
+  await deletePendingMediaRecord({
+    galleryId: media.galleryId,
+    photoId: media.id,
+  });
+
+  return { outcome: "deleted", media };
+}
+
+function getSafeDeletionFailureReason(error: unknown) {
+  const failureType =
+    error instanceof Error && error.name.trim().length > 0
+      ? error.name.trim().slice(0, 80)
+      : "unknown";
+
+  return `R2 object deletion failed (${failureType}); retry scheduled.`;
 }
 
 function createReadyMediaView(

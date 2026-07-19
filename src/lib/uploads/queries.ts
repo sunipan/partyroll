@@ -21,6 +21,8 @@ import {
 } from "./objects";
 import {
   COMPLETION_RETRY_DELAY_MILLISECONDS,
+  MEDIA_DELETION_RETRY_DELAY_MILLISECONDS,
+  MAX_MEDIA_DELETION_ATTEMPTS,
   MAX_COMPLETION_ATTEMPTS,
   UPLOAD_CLEANUP_GRACE_MILLISECONDS,
   UPLOAD_WORK_LEASE_MILLISECONDS,
@@ -61,6 +63,14 @@ export type MarkPhotoReadyResult =
   | { outcome: "unavailable" }
   | { outcome: "quota-exceeded" }
   | { outcome: "state-changed" };
+
+export type MediaDeletionFailureInput = {
+  photoId: string;
+  galleryId: string;
+  failureReason: string;
+  now?: Date;
+  retryAt?: Date;
+};
 
 export type UploadCleanupClaim = {
   photo: Photo;
@@ -439,7 +449,7 @@ export async function getReadyMediaForOwner({
   return photo ? stripReadyMediaCursorCreatedAt(photo) : null;
 }
 
-export async function deleteReadyMediaRecordForOwner({
+export async function claimReadyMediaDeletionForOwner({
   ownerClerkId,
   galleryId,
   photoId,
@@ -471,8 +481,18 @@ export async function deleteReadyMediaRecordForOwner({
       return null;
     }
 
-    const [deletedPhoto] = await tx
-      .delete(photos)
+    const deletedStorageBytes = requireReadyByteSize(candidate.photo.byteSize);
+
+    const [claimedPhoto] = await tx
+      .update(photos)
+      .set({
+        status: "delete_pending",
+        deletionRequestedAt: now,
+        deletionAccountedAt: now,
+        deletionFailedAt: null,
+        deletionFailureReason: null,
+        nextDeletionAttemptAt: null,
+      })
       .where(
         and(
           eq(photos.id, photoId),
@@ -482,10 +502,9 @@ export async function deleteReadyMediaRecordForOwner({
       )
       .returning();
 
-    if (!deletedPhoto) {
+    if (!claimedPhoto) {
       return null;
     }
-    const deletedStorageBytes = requireReadyByteSize(deletedPhoto.byteSize);
 
     await tx
       .update(galleries)
@@ -501,8 +520,93 @@ export async function deleteReadyMediaRecordForOwner({
         ),
       );
 
-    return deletedPhoto;
+    return claimedPhoto;
   });
+}
+
+export async function getRetryableDeletePendingMediaForOwner({
+  ownerClerkId,
+  galleryId,
+  photoId,
+  now = new Date(),
+}: {
+  ownerClerkId: string;
+  galleryId: string;
+  photoId: string;
+  now?: Date;
+}): Promise<Photo | null> {
+  const [photo] = await db
+    .select({ photo: photos })
+    .from(photos)
+    .innerJoin(galleries, eq(photos.galleryId, galleries.id))
+    .where(
+      and(
+        eq(photos.id, photoId),
+        eq(photos.galleryId, galleryId),
+        eq(photos.status, "delete_pending"),
+        eq(galleries.id, galleryId),
+        eq(galleries.ownerClerkId, ownerClerkId),
+        or(
+          isNull(photos.nextDeletionAttemptAt),
+          lte(photos.nextDeletionAttemptAt, now),
+        ),
+      ),
+    )
+    .limit(1);
+
+  return photo?.photo ?? null;
+}
+
+export async function deletePendingMediaRecord({
+  galleryId,
+  photoId,
+}: {
+  galleryId: string;
+  photoId: string;
+}): Promise<Photo | null> {
+  const [deletedPhoto] = await db
+    .delete(photos)
+    .where(
+      and(
+        eq(photos.id, photoId),
+        eq(photos.galleryId, galleryId),
+        eq(photos.status, "delete_pending"),
+      ),
+    )
+    .returning();
+
+  return deletedPhoto ?? null;
+}
+
+export async function recordMediaDeletionFailure({
+  photoId,
+  galleryId,
+  failureReason,
+  now = new Date(),
+  retryAt = getMediaDeletionRetryAt(now),
+}: MediaDeletionFailureInput): Promise<Photo | null> {
+  const [photo] = await db
+    .update(photos)
+    .set({
+      deletionAttempts: sql`least(${photos.deletionAttempts} + 1, ${MAX_MEDIA_DELETION_ATTEMPTS})`,
+      deletionFailedAt: now,
+      deletionFailureReason: failureReason,
+      nextDeletionAttemptAt: retryAt,
+    })
+    .where(
+      and(
+        eq(photos.id, photoId),
+        eq(photos.galleryId, galleryId),
+        eq(photos.status, "delete_pending"),
+      ),
+    )
+    .returning();
+
+  return photo ?? null;
+}
+
+export function getMediaDeletionRetryAt(now = new Date()) {
+  return new Date(now.getTime() + MEDIA_DELETION_RETRY_DELAY_MILLISECONDS);
 }
 
 function requireReadyByteSize(byteSize: number | null) {

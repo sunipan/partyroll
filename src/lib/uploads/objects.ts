@@ -152,6 +152,35 @@ export function getReadyMediaObjectKeys(input: UploadObjectDescriptor) {
   ];
 }
 
+export function getMediaDeletionObjectKeys(input: UploadObjectDescriptor) {
+  const objectKeys = [
+    requireObjectKey(input.quarantineObjectKey, "quarantine object key"),
+    requireObjectKey(input.originalObjectKey, "original object key"),
+    getQuarantineObjectKey(input.galleryId, input.id),
+    getOriginalObjectKey(input.galleryId, input.id),
+  ];
+
+  if (input.mediaKind === "image") {
+    objectKeys.push(
+      requireObjectKey(input.displayObjectKey, "display object key"),
+      requireObjectKey(input.thumbnailObjectKey, "thumbnail object key"),
+      getDisplayObjectKey(input.galleryId, input.id),
+      getThumbnailObjectKey(input.galleryId, input.id),
+    );
+  } else if (input.mediaKind === "video") {
+    if (input.displayObjectKey !== null && input.displayObjectKey !== undefined) {
+      throw new InvalidUploadError("Video uploads must not have display objects.");
+    }
+    if (input.thumbnailObjectKey !== null && input.thumbnailObjectKey !== undefined) {
+      throw new InvalidUploadError("Video uploads must not have thumbnail objects.");
+    }
+  } else {
+    throw new InvalidUploadError("The upload record is missing media kind.");
+  }
+
+  return [...new Set(objectKeys)];
+}
+
 function requireObjectKey(value: string | null | undefined, label: string) {
   if (!value || value.trim().length === 0) {
     throw new InvalidUploadError(`The upload record is missing ${label}.`);

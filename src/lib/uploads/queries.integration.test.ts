@@ -537,7 +537,7 @@ describe("photo upload reservations", () => {
   });
 
   it(
-    "deletes ready media only for its owning gallery and updates accounting once",
+    "claims ready media deletion only for its owner and updates accounting once",
     async () => {
       const [deleteGallery, sameOwnerOtherGallery, otherOwnerGallery] =
         await Promise.all([
@@ -596,33 +596,57 @@ describe("photo upload reservations", () => {
         ).resolves.toMatchObject({ outcome: "ready" });
 
         await expect(
-          uploadQueries.deleteReadyMediaRecordForOwner({
+          uploadQueries.claimReadyMediaDeletionForOwner({
             ownerClerkId: owner,
             galleryId: sameOwnerOtherGallery.id,
             photoId: reservation.photo.id,
           }),
         ).resolves.toBeNull();
         await expect(
-          uploadQueries.deleteReadyMediaRecordForOwner({
+          uploadQueries.claimReadyMediaDeletionForOwner({
             ownerClerkId: `${owner}-other`,
             galleryId: deleteGallery.id,
             photoId: reservation.photo.id,
           }),
         ).resolves.toBeNull();
 
-        const deleted = await uploadQueries.deleteReadyMediaRecordForOwner({
-          ownerClerkId: owner,
-          galleryId: deleteGallery.id,
-          photoId: reservation.photo.id,
+        const claimedForDeletion =
+          await uploadQueries.claimReadyMediaDeletionForOwner({
+            ownerClerkId: owner,
+            galleryId: deleteGallery.id,
+            photoId: reservation.photo.id,
+          });
+        expect(claimedForDeletion).toMatchObject({
+          id: reservation.photo.id,
+          status: "delete_pending",
+          deletionRequestedAt: expect.any(Date),
+          deletionAccountedAt: expect.any(Date),
+          deletionAttempts: 0,
+          nextDeletionAttemptAt: null,
+          deletionFailedAt: null,
+          deletionFailureReason: null,
         });
-        expect(deleted?.id).toBe(reservation.photo.id);
         await expect(
-          uploadQueries.deleteReadyMediaRecordForOwner({
+          uploadQueries.claimReadyMediaDeletionForOwner({
             ownerClerkId: owner,
             galleryId: deleteGallery.id,
             photoId: reservation.photo.id,
           }),
         ).resolves.toBeNull();
+
+        await expect(
+          uploadQueries.listReadyMediaForOwner({
+            ownerClerkId: owner,
+            galleryId: deleteGallery.id,
+          }),
+        ).resolves.toEqual({ items: [], nextCursor: null });
+        await expect(
+          uploadQueries.listReadyMediaForGuest({
+            galleryId: deleteGallery.id,
+            slug: deleteGallery.slug,
+            accessVersion: deleteGallery.accessVersion,
+          }),
+        ).resolves.toEqual({ items: [], nextCursor: null });
 
         const [updatedGallery] = await db
           .select()
@@ -632,18 +656,36 @@ describe("photo upload reservations", () => {
           .select()
           .from(galleries)
           .where(eq(galleries.id, sameOwnerOtherGallery.id));
-        const [remainingPhoto] = await db
+        const [pendingDeletionPhoto] = await db
           .select()
           .from(photos)
           .where(eq(photos.id, reservation.photo.id));
 
-        expect(remainingPhoto).toBeUndefined();
+        expect(pendingDeletionPhoto).toMatchObject({
+          id: reservation.photo.id,
+          status: "delete_pending",
+          deletionRequestedAt: expect.any(Date),
+          deletionAccountedAt: expect.any(Date),
+        });
         expect(updatedGallery.photoCount).toBe(0);
         expect(updatedGallery.storageBytes).toBe(0);
         expect(updatedGallery.reservedPhotoCount).toBe(0);
         expect(updatedGallery.reservedBytes).toBe(0);
         expect(sameOwnerOther.photoCount).toBe(0);
         expect(sameOwnerOther.storageBytes).toBe(0);
+
+        const completed = await uploadQueries.deletePendingMediaRecord({
+          galleryId: deleteGallery.id,
+          photoId: reservation.photo.id,
+        });
+        expect(completed?.id).toBe(reservation.photo.id);
+
+        const [remainingPhoto] = await db
+          .select()
+          .from(photos)
+          .where(eq(photos.id, reservation.photo.id));
+
+        expect(remainingPhoto).toBeUndefined();
       } finally {
         await db
           .delete(galleries)

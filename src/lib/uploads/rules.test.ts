@@ -1,10 +1,15 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  getMaxSourceBytesForMimeType,
+  getMediaKindForMimeType,
+  MAX_IMAGE_SOURCE_BYTES,
   MAX_SELECTED_UPLOADS,
-  MAX_SOURCE_BYTES,
+  MAX_VIDEO_SOURCE_BYTES,
   photoStatusSchema,
   reserveUploadInputSchema,
+  supportedImageMimeTypes,
+  supportedVideoMimeTypes,
 } from "./rules";
 
 const validInput = {
@@ -18,29 +23,64 @@ const validInput = {
 describe("upload rules", () => {
   it("keeps the queue and source limits generous but bounded", () => {
     expect(MAX_SELECTED_UPLOADS).toBe(100);
-    expect(MAX_SOURCE_BYTES).toBe(15 * 1024 * 1024);
+    expect(MAX_IMAGE_SOURCE_BYTES).toBe(30 * 1024 * 1024);
+    expect(MAX_VIDEO_SOURCE_BYTES).toBe(150 * 1024 * 1024);
     expect(reserveUploadInputSchema.safeParse(validInput).success).toBe(true);
   });
 
-  it("accepts supported images and videos", () => {
+  it("maps approved MIME types to their media kind and limit", () => {
+    for (const mimeType of supportedImageMimeTypes) {
+      expect(getMediaKindForMimeType(mimeType)).toBe("image");
+      expect(getMaxSourceBytesForMimeType(mimeType)).toBe(
+        MAX_IMAGE_SOURCE_BYTES,
+      );
+    }
+    for (const mimeType of supportedVideoMimeTypes) {
+      expect(getMediaKindForMimeType(mimeType)).toBe("video");
+      expect(getMaxSourceBytesForMimeType(mimeType)).toBe(
+        MAX_VIDEO_SOURCE_BYTES,
+      );
+    }
+  });
+
+  it("accepts images at 30 MiB and rejects images over 30 MiB", () => {
+    expect(
+      reserveUploadInputSchema.safeParse({
+        ...validInput,
+        byteSize: MAX_IMAGE_SOURCE_BYTES,
+      }).success,
+    ).toBe(true);
+    const result = reserveUploadInputSchema.safeParse({
+      ...validInput,
+      byteSize: MAX_IMAGE_SOURCE_BYTES + 1,
+    });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.issues[0]?.message).toBe(
+        "Images must be 30 MB or smaller.",
+      );
+    }
+  });
+
+  it("accepts videos at 150 MiB and rejects videos over 150 MiB", () => {
     expect(
       reserveUploadInputSchema.safeParse({
         ...validInput,
         mimeType: "video/mp4",
+        byteSize: MAX_VIDEO_SOURCE_BYTES,
       }).success,
     ).toBe(true);
-    expect(
-      reserveUploadInputSchema.safeParse({
-        ...validInput,
-        mimeType: "video/quicktime",
-      }).success,
-    ).toBe(true);
-    expect(
-      reserveUploadInputSchema.safeParse({
-        ...validInput,
-        mimeType: "video/webm",
-      }).success,
-    ).toBe(true);
+    const result = reserveUploadInputSchema.safeParse({
+      ...validInput,
+      mimeType: "video/mp4",
+      byteSize: MAX_VIDEO_SOURCE_BYTES + 1,
+    });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.issues[0]?.message).toBe(
+        "Videos must be 150 MB or smaller.",
+      );
+    }
   });
 
   it("recognizes upload cleanup states", () => {
@@ -58,7 +98,7 @@ describe("upload rules", () => {
     expect(
       reserveUploadInputSchema.safeParse({
         ...validInput,
-        byteSize: MAX_SOURCE_BYTES + 1,
+        byteSize: MAX_IMAGE_SOURCE_BYTES + 1,
       }).success,
     ).toBe(false);
     expect(

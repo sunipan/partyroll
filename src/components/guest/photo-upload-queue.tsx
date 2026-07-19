@@ -16,8 +16,10 @@ import {
 import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
 import {
+  getMaxSourceBytesForMediaKind,
+  getMediaKindForMimeType,
+  getUploadSizeLimitMegabytes,
   MAX_SELECTED_UPLOADS,
-  MAX_SOURCE_BYTES,
   supportedUploadMimeTypes,
   type SupportedUploadMimeType,
 } from "@/lib/uploads/client-limits";
@@ -181,8 +183,14 @@ export function PhotoUploadQueue({ slug }: { slug: string }) {
         errors.push(`${file.name} is not a supported image or video.`);
         continue;
       }
-      if (file.size <= 0 || file.size > MAX_SOURCE_BYTES) {
-        errors.push(`${file.name} must be smaller than 15 MB.`);
+      const mediaKind = getMediaKindForMimeType(mimeType);
+      if (
+        file.size <= 0 ||
+        file.size > getMaxSourceBytesForMediaKind(mediaKind)
+      ) {
+        errors.push(
+          `${file.name} must be ${getUploadSizeLimitMegabytes(mediaKind)} MB or smaller.`,
+        );
         continue;
       }
 
@@ -478,7 +486,10 @@ export function PhotoUploadQueue({ slug }: { slug: string }) {
               {readyCount} of {items.length} files uploaded.
             </p>
           ) : (
-            <p>JPEG, PNG, WebP, HEIC, HEIF, MP4, MOV, or WebM; up to 15 MB each.</p>
+            <p>
+              JPEG, PNG, WebP, HEIC, and HEIF images up to 30 MB; MP4, MOV,
+              and WebM videos up to 150 MB.
+            </p>
           )}
         </div>
 
@@ -685,11 +696,11 @@ function getSupportedMimeType(file: File): SupportedUploadMimeType | null {
 }
 
 function isImageMimeType(mimeType: SupportedUploadMimeType) {
-  return mimeType.startsWith("image/");
+  return getMediaKindForMimeType(mimeType) === "image";
 }
 
 function isVideoMimeType(mimeType: SupportedUploadMimeType) {
-  return mimeType.startsWith("video/");
+  return getMediaKindForMimeType(mimeType) === "video";
 }
 
 function isReservationResponse(value: unknown): value is ReservationResponse {

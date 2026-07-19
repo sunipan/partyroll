@@ -23,10 +23,9 @@ import {
   resetPhotoToPending,
 } from "./queries";
 import {
-  isSupportedImageMimeType,
+  isSupportedUploadMimeType,
   isSupportedVideoMimeType,
   getMediaKindForMimeType,
-  type SupportedUploadMimeType,
 } from "./rules";
 import {
   MAX_COMPLETION_ATTEMPTS,
@@ -497,12 +496,6 @@ function requireObjectKey(value: string | null, label: string) {
   }
 
   return value;
-}
-
-function isSupportedUploadMimeType(
-  mimeType: string,
-): mimeType is SupportedUploadMimeType {
-  return isSupportedImageMimeType(mimeType) || isSupportedVideoMimeType(mimeType);
 }
 
 function isInvalidImageError(error: unknown) {

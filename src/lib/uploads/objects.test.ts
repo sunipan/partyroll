@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 
 const r2Mock = vi.hoisted(() => ({
   send: vi.fn(),
@@ -14,13 +15,71 @@ vi.mock("@aws-sdk/s3-request-presigner", () => ({
 }));
 
 import {
+  assertOriginalObject,
+  createQuarantineUploadUrl,
   deleteUploadObjects,
   getMediaDeletionObjectKeys,
   getReadyMediaObjectKeys,
   InvalidUploadError,
 } from "./objects";
+import {
+  MAX_IMAGE_SOURCE_BYTES,
+  MAX_VIDEO_SOURCE_BYTES,
+} from "./rules";
 
 describe("upload object helpers", () => {
+  it("signs the exact content length and rejects media-specific oversize URLs", async () => {
+    await expect(
+      createQuarantineUploadUrl({
+        objectKey: "quarantine/gallery-1/video-1",
+        mimeType: "video/mp4",
+        byteSize: MAX_VIDEO_SOURCE_BYTES,
+        expiresAt: new Date(Date.now() + 60_000),
+      }),
+    ).resolves.toBe("signed-url");
+    expect(vi.mocked(getSignedUrl).mock.calls[0]?.[1].input).toMatchObject({
+      ContentLength: MAX_VIDEO_SOURCE_BYTES,
+      ContentType: "video/mp4",
+    });
+
+    await expect(
+      createQuarantineUploadUrl({
+        objectKey: "quarantine/gallery-1/image-1",
+        mimeType: "image/jpeg",
+        byteSize: MAX_IMAGE_SOURCE_BYTES + 1,
+        expiresAt: new Date(Date.now() + 60_000),
+      }),
+    ).rejects.toThrow("The upload size exceeds the media limit.");
+  });
+
+  it("checks completed object size against the MIME-specific limit", async () => {
+    const sharedByteSize = MAX_IMAGE_SOURCE_BYTES + 1;
+    r2Mock.send
+      .mockResolvedValueOnce({
+        ContentLength: sharedByteSize,
+        ContentType: "image/jpeg",
+      })
+      .mockResolvedValueOnce({
+        ContentLength: sharedByteSize,
+        ContentType: "video/mp4",
+      });
+
+    await expect(
+      assertOriginalObject({
+        objectKey: "originals/gallery-1/image-1",
+        expectedByteSize: sharedByteSize,
+        expectedMimeType: "image/jpeg",
+      }),
+    ).rejects.toThrow("The original object has an invalid size.");
+    await expect(
+      assertOriginalObject({
+        objectKey: "originals/gallery-1/video-1",
+        expectedByteSize: sharedByteSize,
+        expectedMimeType: "video/mp4",
+      }),
+    ).resolves.toBeUndefined();
+  });
+
   it("returns current image object keys without deriving missing metadata", () => {
     expect(
       getReadyMediaObjectKeys({

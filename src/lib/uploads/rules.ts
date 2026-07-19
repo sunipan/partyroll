@@ -1,18 +1,26 @@
 import { z } from "zod";
 
 import {
-  MAX_SOURCE_BYTES,
+  getMaxSourceBytesForMimeType,
+  getMediaKindForMimeType,
+  getUploadSizeLimitMegabytes,
   supportedImageMimeTypes,
   supportedUploadMimeTypes,
   supportedVideoMimeTypes,
   type SupportedImageMimeType,
   type SupportedUploadMimeType,
   type SupportedVideoMimeType,
+  type UploadMediaKind,
 } from "./client-limits";
 
 export {
+  getMaxSourceBytesForMediaKind,
+  getMaxSourceBytesForMimeType,
+  getMediaKindForMimeType,
+  getUploadSizeLimitMegabytes,
+  MAX_IMAGE_SOURCE_BYTES,
   MAX_SELECTED_UPLOADS,
-  MAX_SOURCE_BYTES,
+  MAX_VIDEO_SOURCE_BYTES,
   supportedImageMimeTypes,
   supportedUploadMimeTypes,
   supportedVideoMimeTypes,
@@ -37,22 +45,35 @@ export const photoStatusSchema = z.enum([
 ]);
 export type PhotoStatus = z.infer<typeof photoStatusSchema>;
 
-export const reserveUploadInputSchema = z.object({
-  slug: z
-    .string()
-    .min(1)
-    .max(64)
-    .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/),
-  idempotencyKey: z.uuid(),
-  mimeType: uploadMimeTypeSchema,
-  byteSize: z.number().int().positive().max(MAX_SOURCE_BYTES),
-  originalFilename: z
-    .string()
-    .trim()
-    .min(1)
-    .max(255)
-    .regex(/^[^\\/\0]+$/),
-});
+export const reserveUploadInputSchema = z
+  .object({
+    slug: z
+      .string()
+      .min(1)
+      .max(64)
+      .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/),
+    idempotencyKey: z.uuid(),
+    mimeType: uploadMimeTypeSchema,
+    byteSize: z.number().int().positive(),
+    originalFilename: z
+      .string()
+      .trim()
+      .min(1)
+      .max(255)
+      .regex(/^[^\\/\0]+$/),
+  })
+  .superRefine((input, context) => {
+    if (input.byteSize <= getMaxSourceBytesForMimeType(input.mimeType)) {
+      return;
+    }
+
+    const mediaKind = getMediaKindForMimeType(input.mimeType);
+    context.addIssue({
+      code: "custom",
+      path: ["byteSize"],
+      message: `${getMediaKindLabel(mediaKind)} must be ${getUploadSizeLimitMegabytes(mediaKind)} MB or smaller.`,
+    });
+  });
 
 export const completeUploadInputSchema = z.object({
   slug: z
@@ -63,18 +84,12 @@ export const completeUploadInputSchema = z.object({
 });
 
 export type ReserveUploadInput = z.infer<typeof reserveUploadInputSchema>;
-export type UploadMediaKind = "image" | "video";
 export type {
   SupportedImageMimeType,
   SupportedUploadMimeType,
   SupportedVideoMimeType,
+  UploadMediaKind,
 };
-
-export function getMediaKindForMimeType(
-  mimeType: SupportedUploadMimeType,
-): UploadMediaKind {
-  return isSupportedVideoMimeType(mimeType) ? "video" : "image";
-}
 
 export function isSupportedImageMimeType(
   mimeType: string,
@@ -86,4 +101,14 @@ export function isSupportedVideoMimeType(
   mimeType: string,
 ): mimeType is SupportedVideoMimeType {
   return supportedVideoMimeTypes.includes(mimeType as SupportedVideoMimeType);
+}
+
+export function isSupportedUploadMimeType(
+  mimeType: string,
+): mimeType is SupportedUploadMimeType {
+  return isSupportedImageMimeType(mimeType) || isSupportedVideoMimeType(mimeType);
+}
+
+function getMediaKindLabel(mediaKind: UploadMediaKind) {
+  return mediaKind === "image" ? "Images" : "Videos";
 }

@@ -14,7 +14,8 @@ import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { r2, r2Bucket } from "@/lib/r2";
 
 import {
-  MAX_SOURCE_BYTES,
+  getMaxSourceBytesForMimeType,
+  isSupportedUploadMimeType,
   type SupportedUploadMimeType,
   UPLOAD_RESERVATION_SECONDS,
   UPLOAD_URL_SECONDS,
@@ -61,7 +62,7 @@ export async function prepareQuarantineUploadReservation({
   now = new Date(),
 }: {
   galleryId: string;
-  mimeType: string;
+  mimeType: SupportedUploadMimeType;
   byteSize: number;
   now?: Date;
 }) {
@@ -91,6 +92,16 @@ export async function createQuarantineUploadUrl({
   byteSize: number;
   expiresAt: Date;
 }) {
+  if (!isSupportedUploadMimeType(mimeType)) {
+    throw new InvalidUploadError("The upload type is unsupported.");
+  }
+  if (
+    byteSize <= 0 ||
+    byteSize > getMaxSourceBytesForMimeType(mimeType)
+  ) {
+    throw new InvalidUploadError("The upload size exceeds the media limit.");
+  }
+
   const remainingSeconds = Math.floor((expiresAt.getTime() - Date.now()) / 1000);
   if (remainingSeconds <= 0) {
     throw new Error("The upload reservation has expired.");
@@ -192,8 +203,9 @@ function requireObjectKey(value: string | null | undefined, label: string) {
 export async function readQuarantineObject(
   objectKey: string,
   expectedByteSize: number,
-  expectedMimeType?: SupportedUploadMimeType,
+  expectedMimeType: SupportedUploadMimeType,
 ): Promise<Buffer> {
+  const maxSourceBytes = getMaxSourceBytesForMimeType(expectedMimeType);
   const head = await withR2Timeout((abortSignal) =>
     r2.send(new HeadObjectCommand({ Bucket: r2Bucket, Key: objectKey }), {
       abortSignal,
@@ -202,12 +214,12 @@ export async function readQuarantineObject(
   if (
     !head.ContentLength ||
     head.ContentLength <= 0 ||
-    head.ContentLength > MAX_SOURCE_BYTES ||
+    head.ContentLength > maxSourceBytes ||
     head.ContentLength !== expectedByteSize
   ) {
     throw new InvalidUploadError("The uploaded object has an invalid size.");
   }
-  if (expectedMimeType && head.ContentType !== expectedMimeType) {
+  if (head.ContentType !== expectedMimeType) {
     throw new InvalidUploadError("The uploaded object has an invalid content type.");
   }
 
@@ -224,7 +236,7 @@ export async function readQuarantineObject(
     let totalBytes = 0;
     for await (const chunk of result.Body as AsyncIterable<Uint8Array>) {
       totalBytes += chunk.byteLength;
-      if (totalBytes > MAX_SOURCE_BYTES) {
+      if (totalBytes > maxSourceBytes) {
         throw new InvalidUploadError("The uploaded object is too large.");
       }
       chunks.push(Buffer.from(chunk));
@@ -248,6 +260,7 @@ export async function readQuarantineObjectPrefix(
   expectedMimeType: SupportedUploadMimeType,
   maxBytes: number,
 ): Promise<Buffer> {
+  const maxSourceBytes = getMaxSourceBytesForMimeType(expectedMimeType);
   const head = await withR2Timeout((abortSignal) =>
     r2.send(new HeadObjectCommand({ Bucket: r2Bucket, Key: objectKey }), {
       abortSignal,
@@ -256,7 +269,7 @@ export async function readQuarantineObjectPrefix(
   if (
     !head.ContentLength ||
     head.ContentLength <= 0 ||
-    head.ContentLength > MAX_SOURCE_BYTES ||
+    head.ContentLength > maxSourceBytes ||
     head.ContentLength !== expectedByteSize
   ) {
     throw new InvalidUploadError("The uploaded object has an invalid size.");
@@ -328,6 +341,7 @@ export async function assertOriginalObject({
   expectedByteSize: number;
   expectedMimeType: SupportedUploadMimeType;
 }) {
+  const maxSourceBytes = getMaxSourceBytesForMimeType(expectedMimeType);
   const head = await withR2Timeout((abortSignal) =>
     r2.send(new HeadObjectCommand({ Bucket: r2Bucket, Key: objectKey }), {
       abortSignal,
@@ -336,7 +350,7 @@ export async function assertOriginalObject({
   if (
     !head.ContentLength ||
     head.ContentLength <= 0 ||
-    head.ContentLength > MAX_SOURCE_BYTES ||
+    head.ContentLength > maxSourceBytes ||
     head.ContentLength !== expectedByteSize
   ) {
     throw new InvalidUploadError("The original object has an invalid size.");

@@ -9,7 +9,10 @@ import {
   reservePhotoUpload,
 } from "@/lib/uploads/queries";
 import { consumeUploadReservationAttempt } from "@/lib/uploads/rate-limit";
-import { reserveUploadInputSchema } from "@/lib/uploads/rules";
+import {
+  isSupportedUploadMimeType,
+  reserveUploadInputSchema,
+} from "@/lib/uploads/rules";
 import { hashGuestSession } from "@/lib/uploads/security-core";
 import {
   isSameOriginMutation,
@@ -31,7 +34,16 @@ export async function POST(request: Request) {
     await readBoundedJson(request, MAX_REQUEST_BYTES),
   );
   if (!parsed.success) {
-    return noStoreJson(GENERIC_ERROR, { status: 400 });
+    const sizeIssue = parsed.error.issues.find(
+      (issue) =>
+        issue.code === "custom" &&
+        issue.path.length === 1 &&
+        issue.path[0] === "byteSize",
+    );
+    return noStoreJson(
+      sizeIssue ? { message: sizeIssue.message } : GENERIC_ERROR,
+      { status: 400 },
+    );
   }
 
   const context = await getAuthorizedGuestContext(parsed.data.slug);
@@ -51,6 +63,7 @@ export async function POST(request: Request) {
 
   if (existing) {
     if (
+      !isSupportedUploadMimeType(existing.declaredMimeType) ||
       existing.declaredMimeType !== parsed.data.mimeType ||
       existing.declaredByteSize !== parsed.data.byteSize ||
       existing.originalFilename !== parsed.data.originalFilename
@@ -142,6 +155,9 @@ export async function POST(request: Request) {
 
   let uploadUrl = prepared.uploadUrl;
   if (result.outcome === "existing") {
+    if (!isSupportedUploadMimeType(photo.declaredMimeType)) {
+      return noStoreJson(GENERIC_ERROR, { status: 409 });
+    }
     try {
       uploadUrl = await createQuarantineUploadUrl({
         objectKey: photo.quarantineObjectKey,

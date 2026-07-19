@@ -11,7 +11,8 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { getAuthorizedGuestGallery } from "@/lib/guest-access/session";
+import { getAuthorizedGuestContext } from "@/lib/guest-access/session";
+import { listReadyMediaForGuestGallery } from "@/lib/uploads/media";
 
 export const metadata = {
   title: "Guest gallery | Partyroll",
@@ -24,11 +25,18 @@ export default async function GuestGalleryPage({
   params: Promise<{ slug: string }>;
 }) {
   const { slug } = await params;
-  const gallery = await getAuthorizedGuestGallery(slug);
+  const context = await getAuthorizedGuestContext(slug);
 
-  if (!gallery) {
+  if (!context) {
     notFound();
   }
+
+  const { gallery, session } = context;
+  const readyMedia = await listReadyMediaForGuestGallery({
+    galleryId: gallery.id,
+    slug: gallery.slug,
+    accessVersion: session.accessVersion,
+  });
 
   return (
     <main className="mx-auto flex min-h-dvh w-full max-w-5xl flex-col px-6 py-8 sm:px-10 sm:py-10">
@@ -82,22 +90,93 @@ export default async function GuestGalleryPage({
 
       {gallery.status === "open" ? <PhotoUploadQueue slug={gallery.slug} /> : null}
 
-      <Card className="mb-12 border-dashed bg-card/70 py-12 text-center sm:py-16">
-        <CardHeader>
-          <Images aria-hidden="true" className="mx-auto size-10 text-primary" />
-          <CardTitle className="mt-3 text-xl">No media yet</CardTitle>
-          <CardDescription>
-            Photos and videos shared by guests will appear together in this gallery.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <Link href="/" className={buttonVariants({ variant: "outline" })}>
-            Enter another gallery
-          </Link>
-        </CardContent>
-      </Card>
+      {readyMedia.length > 0 ? (
+        <section className="mb-12" aria-labelledby="gallery-media-title">
+          <div className="mb-5 flex items-end justify-between gap-4">
+            <div>
+              <h2 id="gallery-media-title" className="text-2xl font-semibold">
+                Shared media
+              </h2>
+              <p className="mt-1 text-sm text-muted-foreground">
+                {readyMedia.length} ready {readyMedia.length === 1 ? "item" : "items"}
+              </p>
+            </div>
+          </div>
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {readyMedia.map((media) => (
+              <Card key={media.id} className="overflow-hidden bg-card shadow-xs">
+                {media.mediaKind === "video" ? (
+                  <video
+                    controls
+                    preload="metadata"
+                    src={media.originalUrl}
+                    className="aspect-square w-full bg-black object-contain"
+                    aria-label={getMediaLabel(media)}
+                  />
+                ) : (
+                  /* eslint-disable-next-line @next/next/no-img-element -- Private media uses authenticated same-origin routes. */
+                  <img
+                    src={media.displayUrl}
+                    alt={getMediaLabel(media)}
+                    className="aspect-square w-full bg-muted object-cover"
+                    loading="lazy"
+                  />
+                )}
+                <CardContent className="space-y-1">
+                  <p className="truncate font-medium">{getMediaLabel(media)}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {formatMediaDetails(media)}
+                  </p>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        </section>
+      ) : (
+        <Card className="mb-12 border-dashed bg-card/70 py-12 text-center sm:py-16">
+          <CardHeader>
+            <Images aria-hidden="true" className="mx-auto size-10 text-primary" />
+            <CardTitle className="mt-3 text-xl">No media yet</CardTitle>
+            <CardDescription>
+              Photos and videos shared by guests will appear together in this gallery.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Link href="/" className={buttonVariants({ variant: "outline" })}>
+              Enter another gallery
+            </Link>
+          </CardContent>
+        </Card>
+      )}
     </main>
   );
+}
+
+function getMediaLabel(media: {
+  originalFilename: string;
+}) {
+  return media.originalFilename;
+}
+
+function formatMediaDetails(media: {
+  originalByteSize: number;
+  width: number | null;
+  height: number | null;
+}) {
+  const dimensions =
+    media.width && media.height ? `${media.width}×${media.height}` : null;
+  const byteSize = formatByteSize(media.originalByteSize);
+
+  return [dimensions, byteSize].filter(Boolean).join(" · ") || "Ready";
+}
+
+function formatByteSize(byteSize: number) {
+  return new Intl.NumberFormat("en", {
+    maximumFractionDigits: 1,
+    style: "unit",
+    unit: byteSize >= 1024 * 1024 ? "megabyte" : "kilobyte",
+    unitDisplay: "short",
+  }).format(byteSize / (byteSize >= 1024 * 1024 ? 1024 * 1024 : 1024));
 }
 
 function formatEventDate(value: string) {

@@ -1,0 +1,13 @@
+ALTER TABLE "photos" DROP CONSTRAINT "photos_image_derivatives_required";--> statement-breakpoint
+ALTER TABLE "photos" ALTER COLUMN "original_filename" SET NOT NULL;--> statement-breakpoint
+ALTER TABLE "photos" ALTER COLUMN "media_kind" SET NOT NULL;--> statement-breakpoint
+ALTER TABLE "photos" ALTER COLUMN "original_object_key" SET NOT NULL;--> statement-breakpoint
+ALTER TABLE "photos" ADD CONSTRAINT "photos_original_filename_not_blank" CHECK (length(btrim("photos"."original_filename")) > 0);--> statement-breakpoint
+ALTER TABLE "photos" ADD CONSTRAINT "photos_display_object_key_not_blank" CHECK ("photos"."display_object_key" is null or length(btrim("photos"."display_object_key")) > 0);--> statement-breakpoint
+ALTER TABLE "photos" ADD CONSTRAINT "photos_thumbnail_object_key_not_blank" CHECK ("photos"."thumbnail_object_key" is null or length(btrim("photos"."thumbnail_object_key")) > 0);--> statement-breakpoint
+ALTER TABLE "photos" ADD CONSTRAINT "photos_quarantine_object_key_not_blank" CHECK (length(btrim("photos"."quarantine_object_key")) > 0);--> statement-breakpoint
+ALTER TABLE "photos" ADD CONSTRAINT "photos_declared_media_kind_matches_mime" CHECK ((("photos"."media_kind" = 'image' and "photos"."declared_mime_type" in ('image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif')) or ("photos"."media_kind" = 'video' and "photos"."declared_mime_type" in ('video/mp4', 'video/quicktime', 'video/webm'))));--> statement-breakpoint
+ALTER TABLE "photos" ADD CONSTRAINT "photos_ready_final_metadata_required" CHECK (("photos"."status" <> 'ready') or ("photos"."ready_at" is not null and "photos"."mime_type" is not null and "photos"."byte_size" is not null));--> statement-breakpoint
+ALTER TABLE "photos" ADD CONSTRAINT "photos_non_ready_final_metadata_absent" CHECK (("photos"."status" = 'ready') or ("photos"."ready_at" is null and "photos"."mime_type" is null and "photos"."byte_size" is null and "photos"."width" is null and "photos"."height" is null));--> statement-breakpoint
+ALTER TABLE "photos" ADD CONSTRAINT "photos_final_mime_type_matches_media_kind" CHECK ("photos"."mime_type" is null or (("photos"."media_kind" = 'image' and "photos"."mime_type" in ('image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif')) or ("photos"."media_kind" = 'video' and "photos"."mime_type" in ('video/mp4', 'video/quicktime', 'video/webm'))));--> statement-breakpoint
+ALTER TABLE "photos" ADD CONSTRAINT "photos_image_derivatives_required" CHECK (("photos"."media_kind" <> 'image') or ("photos"."display_object_key" is not null and "photos"."thumbnail_object_key" is not null and ("photos"."status" <> 'ready' or ("photos"."width" is not null and "photos"."height" is not null))));

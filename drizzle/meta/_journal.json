@@ -15,6 +15,41 @@
       "when": 1784223057222,
       "tag": "0001_fluffy_madripoor",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1784227061246,
+      "tag": "0002_gorgeous_king_bedlam",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1784228836660,
+      "tag": "0003_demonic_edwin_jarvis",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1784231169554,
+      "tag": "0004_volatile_invisible_woman",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1784314014325,
+      "tag": "0005_youthful_roulette",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1784434162418,
+      "tag": "0006_glamorous_abomination",
+      "breakpoints": true
     }
   ]
 }

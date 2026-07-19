@@ -22,6 +22,7 @@ const serverEnvSchema = z
     R2_BUCKET_NAME: z.string().trim().min(1),
     INVITE_SECRET: z.string().min(32),
     GUEST_SESSION_SECRET: z.string().min(32),
+    CRON_SECRET: z.string().min(32).optional(),
   })
   .superRefine((value, context) => {
     if (
@@ -32,6 +33,14 @@ const serverEnvSchema = z
         code: "custom",
         message: "Must use HTTPS in production",
         path: ["APP_URL"],
+      });
+    }
+
+    if (value.NODE_ENV === "production" && !value.CRON_SECRET) {
+      context.addIssue({
+        code: "custom",
+        message: "Required in production for authenticated cleanup",
+        path: ["CRON_SECRET"],
       });
     }
 
@@ -56,6 +65,7 @@ const result = serverEnvSchema.safeParse({
   R2_BUCKET_NAME: process.env.R2_BUCKET_NAME,
   INVITE_SECRET: process.env.INVITE_SECRET,
   GUEST_SESSION_SECRET: process.env.GUEST_SESSION_SECRET,
+  CRON_SECRET: process.env.CRON_SECRET,
 });
 
 if (!result.success) {

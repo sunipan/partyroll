@@ -5,9 +5,13 @@ import { cookies } from "next/headers";
 import type { Gallery } from "@/db/schema";
 import { env } from "@/lib/env";
 
-import { getGalleryForGuestSession } from "./queries";
+import {
+  getGalleryForGuestSession,
+  getGalleryForIssuedUpload,
+} from "./queries";
 import {
   createGuestSessionToken,
+  type GuestSessionPayload,
   GUEST_SESSION_MAX_AGE_SECONDS,
   verifyGuestSessionToken,
 } from "./session-core";
@@ -35,30 +39,59 @@ export function getGuestSessionCookieOptions() {
   };
 }
 
-export async function getAuthorizedGuestGallery(
+export type AuthorizedGuestContext = {
+  gallery: Gallery;
+  session: GuestSessionPayload;
+};
+
+export async function getAuthorizedGuestContextForIssuedUpload(
   slug: string,
-): Promise<Gallery | null> {
-  if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug) || slug.length > 64) {
+): Promise<AuthorizedGuestContext | null> {
+  const session = await getSignedGuestSession();
+  if (!session) {
     return null;
   }
 
+  const gallery = await getGalleryForIssuedUpload({
+    galleryId: session.galleryId,
+    slug,
+  });
+
+  return gallery ? { gallery, session } : null;
+}
+
+export async function getAuthorizedGuestContext(
+  slug: string,
+): Promise<AuthorizedGuestContext | null> {
+  const session = await getSignedGuestSession();
+  if (!session) {
+    return null;
+  }
+
+  const gallery = await getGalleryForGuestSession({
+    galleryId: session.galleryId,
+    slug,
+    accessVersion: session.accessVersion,
+  });
+
+  return gallery ? { gallery, session } : null;
+}
+
+async function getSignedGuestSession(): Promise<GuestSessionPayload | null> {
   const cookieStore = await cookies();
   const token = cookieStore.get(GUEST_SESSION_COOKIE)?.value;
   if (!token) {
     return null;
   }
 
-  const session = verifyGuestSessionToken({
+  return verifyGuestSessionToken({
     token,
     secret: env.GUEST_SESSION_SECRET,
   });
-  if (!session) {
-    return null;
-  }
+}
 
-  return getGalleryForGuestSession({
-    galleryId: session.galleryId,
-    slug,
-    accessVersion: session.accessVersion,
-  });
+export async function getAuthorizedGuestGallery(
+  slug: string,
+): Promise<Gallery | null> {
+  return (await getAuthorizedGuestContext(slug))?.gallery ?? null;
 }

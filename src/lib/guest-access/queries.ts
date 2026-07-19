@@ -17,6 +17,28 @@ export async function getGalleryBySlugForAccess(
   return gallery ?? null;
 }
 
+export async function getGalleryForIssuedUpload({
+  galleryId,
+  slug,
+}: {
+  galleryId: string;
+  slug: string;
+}): Promise<Gallery | null> {
+  const [gallery] = await db
+    .select()
+    .from(galleries)
+    .where(
+      and(
+        eq(galleries.id, galleryId),
+        eq(galleries.slug, slug),
+        ne(galleries.status, "archived"),
+      ),
+    )
+    .limit(1);
+
+  return gallery ?? null;
+}
+
 export async function getGalleryForGuestSession({
   galleryId,
   slug,

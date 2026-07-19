@@ -35,6 +35,7 @@ type ReadyMediaViewBase = Omit<
   originalByteSize: number;
   originalUrl: string;
   displayUrl: string;
+  downloadUrl: string;
 };
 
 export type ReadyMediaView =
@@ -145,6 +146,7 @@ function createReadyMediaView(
       originalUrl: getAssetPath("original"),
       displayUrl: getAssetPath("display"),
       thumbnailUrl: getAssetPath("thumbnail"),
+      downloadUrl: getAssetPath("download"),
     };
   }
 
@@ -164,6 +166,7 @@ function createReadyMediaView(
       originalUrl: getAssetPath("video"),
       displayUrl: getAssetPath(videoAsset.variant),
       thumbnailUrl: null,
+      downloadUrl: getAssetPath("download"),
     };
   }
 

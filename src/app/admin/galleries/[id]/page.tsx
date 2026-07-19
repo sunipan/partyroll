@@ -20,6 +20,7 @@ import { requireAdmin } from "@/lib/auth";
 import { getGalleryInvitation } from "@/lib/galleries/invitations";
 import { getGalleryForOwner } from "@/lib/galleries/queries";
 import { galleryIdSchema } from "@/lib/galleries/rules";
+import { listReadyMediaForOwnerGallery } from "@/lib/uploads/media";
 
 const dateFormatter = new Intl.DateTimeFormat("en", {
   dateStyle: "long",
@@ -63,6 +64,10 @@ export default async function GalleryAdminPage({ params }: GalleryPageProps) {
 
   const invitation = getGalleryInvitation(gallery);
   const qrPath = `/admin/galleries/${gallery.id}/qr?v=${gallery.accessVersion}`;
+  const readyMedia = await listReadyMediaForOwnerGallery({
+    ownerClerkId: userId,
+    galleryId: gallery.id,
+  });
 
   return (
     <main className="mx-auto flex min-h-dvh w-full max-w-5xl flex-col px-6 py-8 sm:px-10 sm:py-10">
@@ -101,7 +106,7 @@ export default async function GalleryAdminPage({ params }: GalleryPageProps) {
               <CardTitle>Guest invitation</CardTitle>
               <CardDescription className="leading-6">
                 Share the code for manual entry or the link as a QR invitation.
-                Guest entry is enabled in the next phase.
+                Guests can use either invitation to open the gallery and upload media.
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-5">
@@ -149,6 +154,71 @@ export default async function GalleryAdminPage({ params }: GalleryPageProps) {
           </CardContent>
         </Card>
 
+        <Card className="mt-6 bg-card shadow-xs">
+          <CardHeader>
+            <CardTitle>Uploaded media</CardTitle>
+            <CardDescription className="leading-6">
+              {readyMedia.length === 0
+                ? "Ready uploads will appear here once guests add media."
+                : `${readyMedia.length} ready ${readyMedia.length === 1 ? "item" : "items"} using ${formatByteSize(gallery.storageBytes)}.`}
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {readyMedia.length === 0 ? (
+              <div className="rounded-lg border border-dashed bg-muted/30 p-6 text-sm text-muted-foreground">
+                No uploaded media yet.
+              </div>
+            ) : (
+              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                {readyMedia.map((media) => (
+                  <div key={media.id} className="overflow-hidden rounded-xl border bg-background">
+                    {media.mediaKind === "video" ? (
+                      <video
+                        controls
+                        preload="metadata"
+                        src={media.originalUrl}
+                        className="aspect-square w-full bg-black object-contain"
+                        aria-label={getMediaLabel(media)}
+                      />
+                    ) : (
+                      /* eslint-disable-next-line @next/next/no-img-element -- Private media uses authenticated same-origin routes. */
+                      <img
+                        src={media.thumbnailUrl}
+                        alt={getMediaLabel(media)}
+                        className="aspect-square w-full bg-muted object-cover"
+                        loading="lazy"
+                      />
+                    )}
+                    <div className="space-y-3 p-3">
+                      <div>
+                        <p className="truncate font-medium">{getMediaLabel(media)}</p>
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          {formatMediaDetails(media)}
+                        </p>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        <a
+                          href={media.mediaKind === "image" ? media.displayUrl : media.originalUrl}
+                          className={buttonVariants({ variant: "outline", size: "sm" })}
+                        >
+                          {media.mediaKind === "image" ? "Open preview" : "Open video"}
+                        </a>
+                        <a
+                          href={media.downloadUrl}
+                          className={buttonVariants({ variant: "outline", size: "sm" })}
+                          download={media.originalFilename}
+                        >
+                          Download original
+                        </a>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
         <Card className="mt-6 border-primary/20 bg-primary/5 shadow-none">
           <CardHeader>
             <CardTitle>Regenerate guest access</CardTitle>
@@ -169,4 +239,31 @@ export default async function GalleryAdminPage({ params }: GalleryPageProps) {
       </section>
     </main>
   );
+}
+
+function getMediaLabel(media: {
+  originalFilename: string;
+}) {
+  return media.originalFilename;
+}
+
+function formatMediaDetails(media: {
+  originalByteSize: number;
+  width: number | null;
+  height: number | null;
+}) {
+  const dimensions =
+    media.width && media.height ? `${media.width}×${media.height}` : null;
+  const byteSize = formatByteSize(media.originalByteSize);
+
+  return [dimensions, byteSize].filter(Boolean).join(" · ") || "Ready";
+}
+
+function formatByteSize(byteSize: number) {
+  return new Intl.NumberFormat("en", {
+    maximumFractionDigits: 1,
+    style: "unit",
+    unit: byteSize >= 1024 * 1024 ? "megabyte" : "kilobyte",
+    unitDisplay: "short",
+  }).format(byteSize / (byteSize >= 1024 * 1024 ? 1024 * 1024 : 1024));
 }

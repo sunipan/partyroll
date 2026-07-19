@@ -37,12 +37,14 @@ vi.mock("./queries", () => ({
 import {
   deleteReadyMediaForOwner,
   listReadyMediaForGuestGallery,
+  listReadyMediaForOwnerGallery,
 } from "./media";
 import { deleteUploadObjects } from "./objects";
 import {
   deleteReadyMediaRecordForOwner,
   getReadyMediaForOwner,
   listReadyMediaForGuest,
+  listReadyMediaForOwner,
 } from "./queries";
 
 const media = {
@@ -68,6 +70,7 @@ describe("ready media delivery and deletion", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.mocked(listReadyMediaForGuest).mockResolvedValue([media]);
+    vi.mocked(listReadyMediaForOwner).mockResolvedValue([media]);
     vi.mocked(getReadyMediaForOwner).mockResolvedValue(media);
     vi.mocked(deleteUploadObjects).mockResolvedValue(undefined);
     vi.mocked(deleteReadyMediaRecordForOwner).mockResolvedValue({
@@ -103,6 +106,7 @@ describe("ready media delivery and deletion", () => {
         originalUrl: `/g/test-gallery/media/${media.id}/original`,
         displayUrl: `/g/test-gallery/media/${media.id}/display`,
         thumbnailUrl: `/g/test-gallery/media/${media.id}/thumbnail`,
+        downloadUrl: `/g/test-gallery/media/${media.id}/download`,
       },
     );
     expect(view).not.toHaveProperty("quarantineObjectKey");
@@ -114,6 +118,27 @@ describe("ready media delivery and deletion", () => {
       galleryId: media.galleryId,
       slug: "test-gallery",
       accessVersion: 3,
+    });
+  });
+
+  it("creates owner-authorized admin delivery paths without R2 credentials", async () => {
+    const [view] = await listReadyMediaForOwnerGallery({
+      ownerClerkId: "owner-1",
+      galleryId: media.galleryId,
+    });
+
+    expect(view).toMatchObject({
+      originalByteSize: 1024,
+      byteSize: 2048,
+      originalUrl: `/admin/galleries/${media.galleryId}/media/${media.id}/original`,
+      displayUrl: `/admin/galleries/${media.galleryId}/media/${media.id}/display`,
+      thumbnailUrl: `/admin/galleries/${media.galleryId}/media/${media.id}/thumbnail`,
+      downloadUrl: `/admin/galleries/${media.galleryId}/media/${media.id}/download`,
+    });
+    expect(stableMediaPaths(view)).not.toMatch(r2CredentialUrlPattern);
+    expect(listReadyMediaForOwner).toHaveBeenCalledWith({
+      ownerClerkId: "owner-1",
+      galleryId: media.galleryId,
     });
   });
 
@@ -235,3 +260,20 @@ describe("ready media delivery and deletion", () => {
     expect(deleteReadyMediaRecordForOwner).not.toHaveBeenCalled();
   });
 });
+
+const r2CredentialUrlPattern =
+  /(?:X-Amz-|AWSAccessKeyId|Signature=|Credential=|r2\.cloudflarestorage\.com)/i;
+
+function stableMediaPaths(view: {
+  originalUrl: string;
+  displayUrl: string;
+  thumbnailUrl: string | null;
+  downloadUrl: string;
+}) {
+  return [
+    view.originalUrl,
+    view.displayUrl,
+    view.thumbnailUrl,
+    view.downloadUrl,
+  ].join("\n");
+}

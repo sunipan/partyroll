@@ -23,7 +23,7 @@ const validInput = {
 describe("upload rules", () => {
   it("keeps the queue and source limits generous but bounded", () => {
     expect(MAX_SELECTED_UPLOADS).toBe(100);
-    expect(MAX_IMAGE_SOURCE_BYTES).toBe(30 * 1024 * 1024);
+    expect(MAX_IMAGE_SOURCE_BYTES).toBe(100 * 1024 * 1024);
     expect(MAX_VIDEO_SOURCE_BYTES).toBe(150 * 1024 * 1024);
     expect(reserveUploadInputSchema.safeParse(validInput).success).toBe(true);
   });
@@ -43,7 +43,7 @@ describe("upload rules", () => {
     }
   });
 
-  it("accepts images at 30 MiB and rejects images over 30 MiB", () => {
+  it("accepts images at 100 MiB and rejects images over 100 MiB", () => {
     expect(
       reserveUploadInputSchema.safeParse({
         ...validInput,
@@ -57,7 +57,7 @@ describe("upload rules", () => {
     expect(result.success).toBe(false);
     if (!result.success) {
       expect(result.error.issues[0]?.message).toBe(
-        "Images must be 30 MB or smaller.",
+        "Images must be 100 MB or smaller.",
       );
     }
   });

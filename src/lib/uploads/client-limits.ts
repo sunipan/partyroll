@@ -1,5 +1,5 @@
 export const MAX_SELECTED_UPLOADS = 100;
-export const MAX_IMAGE_SOURCE_BYTES = 30 * 1024 * 1024;
+export const MAX_IMAGE_SOURCE_BYTES = 100 * 1024 * 1024;
 export const MAX_VIDEO_SOURCE_BYTES = 150 * 1024 * 1024;
 
 export const supportedImageMimeTypes = [

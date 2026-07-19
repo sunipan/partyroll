@@ -487,7 +487,7 @@ export function PhotoUploadQueue({ slug }: { slug: string }) {
             </p>
           ) : (
             <p>
-              JPEG, PNG, WebP, HEIC, and HEIF images up to 30 MB; MP4, MOV,
+              JPEG, PNG, WebP, HEIC, and HEIF images up to 100 MB; MP4, MOV,
               and WebM videos up to 150 MB.
             </p>
           )}

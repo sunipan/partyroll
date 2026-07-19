@@ -1,9 +1,10 @@
 import "server-only";
 
-import { and, desc, eq, inArray, isNull, lt, lte, ne, or, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, lt, lte, or, sql } from "drizzle-orm";
 
 import { db } from "@/db";
 import { galleries, photos, type Photo } from "@/db/schema";
+import { GUEST_ACCESSIBLE_GALLERY_STATUSES } from "@/lib/galleries/rules";
 
 import {
   getMediaKindForMimeType,
@@ -314,7 +315,7 @@ export async function listReadyMediaForGuest({
         eq(galleries.id, galleryId),
         eq(galleries.slug, slug),
         eq(galleries.accessVersion, accessVersion),
-        ne(galleries.status, "archived"),
+        inArray(galleries.status, [...GUEST_ACCESSIBLE_GALLERY_STATUSES]),
         ...(decodedCursor ? [getReadyMediaCursorPredicate(decodedCursor)] : []),
       ),
     )
@@ -650,7 +651,7 @@ export async function markPhotoReady({
         .where(
           and(
             eq(galleries.id, galleryId),
-            ne(galleries.status, "archived"),
+            inArray(galleries.status, [...GUEST_ACCESSIBLE_GALLERY_STATUSES]),
             sql`${galleries.storageBytes} + ${galleries.reservedBytes} - ${photo.declaredByteSize} + ${finalByteSize} <= ${MAX_GALLERY_STORAGE_BYTES}`,
           ),
         )
@@ -663,7 +664,7 @@ export async function markPhotoReady({
           .where(
             and(
               eq(galleries.id, galleryId),
-              ne(galleries.status, "archived"),
+              inArray(galleries.status, [...GUEST_ACCESSIBLE_GALLERY_STATUSES]),
             ),
           )
           .limit(1);

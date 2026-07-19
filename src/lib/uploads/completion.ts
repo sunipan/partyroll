@@ -64,7 +64,11 @@ export async function completePhotoUpload({
   if (existing.status === "ready") {
     return { outcome: "ready", photo: existing };
   }
-  if (existing.status === "rejected" || existing.status === "deleting") {
+  if (
+    existing.status === "rejected" ||
+    existing.status === "deleting" ||
+    existing.status === "delete_pending"
+  ) {
     return { outcome: "expired" };
   }
   const now = new Date();

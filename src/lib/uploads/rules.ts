@@ -28,6 +28,16 @@ export const UPLOAD_URL_SECONDS = 10 * 60;
 
 const uploadMimeTypeSchema = z.enum(supportedUploadMimeTypes);
 
+export const photoStatusSchema = z.enum([
+  "pending",
+  "processing",
+  "ready",
+  "rejected",
+  "deleting",
+  "delete_pending",
+]);
+export type PhotoStatus = z.infer<typeof photoStatusSchema>;
+
 export const reserveUploadInputSchema = z.object({
   slug: z
     .string()

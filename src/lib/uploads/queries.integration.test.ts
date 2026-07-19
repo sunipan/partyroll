@@ -45,10 +45,14 @@ function photoFixture({
 }: {
   id?: string;
   galleryId: string;
-  status?: "ready" | "pending";
+  status?: "ready" | "pending" | "delete_pending";
   createdAt: Date;
 }) {
-  const ready = status === "ready";
+  const final = status === "ready" || status === "delete_pending";
+  const deletionRequestedAt =
+    status === "delete_pending"
+      ? new Date(createdAt.getTime() + 120_000)
+      : null;
 
   return {
     id,
@@ -64,13 +68,15 @@ function photoFixture({
     displayObjectKey: `assets/${galleryId}/${id}/display.jpg`,
     thumbnailObjectKey: `assets/${galleryId}/${id}/thumbnail.jpg`,
     declaredByteSize: byteSize,
-    mimeType: ready ? "image/jpeg" : null,
-    byteSize: ready ? byteSize : null,
-    width: ready ? 800 : null,
-    height: ready ? 600 : null,
+    mimeType: final ? "image/jpeg" : null,
+    byteSize: final ? byteSize : null,
+    width: final ? 800 : null,
+    height: final ? 600 : null,
     reservationExpiresAt: new Date("2026-07-18T12:30:00.000Z"),
     createdAt,
-    readyAt: ready ? new Date(createdAt.getTime() + 60_000) : null,
+    readyAt: final ? new Date(createdAt.getTime() + 60_000) : null,
+    deletionRequestedAt,
+    deletionAccountedAt: deletionRequestedAt,
   };
 }
 
@@ -309,25 +315,34 @@ describe("photo upload reservations", () => {
   });
 
   it("paginates ready media deterministically without duplicates or skipped rows", async () => {
-    const [pageGallery, emptyGallery, otherOwnerGallery, archivedGallery] =
-      await Promise.all([
-        galleryQueries.createGalleryForOwner(owner, {
-          name: `Pagination ${randomUUID()}`,
-          eventDate: undefined,
-        }),
-        galleryQueries.createGalleryForOwner(owner, {
-          name: `Pagination Empty ${randomUUID()}`,
-          eventDate: undefined,
-        }),
-        galleryQueries.createGalleryForOwner(`${owner}-pagination-other`, {
-          name: `Pagination Other ${randomUUID()}`,
-          eventDate: undefined,
-        }),
-        galleryQueries.createGalleryForOwner(owner, {
-          name: `Pagination Archived ${randomUUID()}`,
-          eventDate: undefined,
-        }),
-      ]);
+    const [
+      pageGallery,
+      emptyGallery,
+      otherOwnerGallery,
+      archivedGallery,
+      deletingGallery,
+    ] = await Promise.all([
+      galleryQueries.createGalleryForOwner(owner, {
+        name: `Pagination ${randomUUID()}`,
+        eventDate: undefined,
+      }),
+      galleryQueries.createGalleryForOwner(owner, {
+        name: `Pagination Empty ${randomUUID()}`,
+        eventDate: undefined,
+      }),
+      galleryQueries.createGalleryForOwner(`${owner}-pagination-other`, {
+        name: `Pagination Other ${randomUUID()}`,
+        eventDate: undefined,
+      }),
+      galleryQueries.createGalleryForOwner(owner, {
+        name: `Pagination Archived ${randomUUID()}`,
+        eventDate: undefined,
+      }),
+      galleryQueries.createGalleryForOwner(owner, {
+        name: `Pagination Deleting ${randomUUID()}`,
+        eventDate: undefined,
+      }),
+    ]);
     const orderedUuid = createOrderedUuidFactory();
     const newestId = orderedUuid(5);
     const tieHighId = orderedUuid(3);
@@ -336,12 +351,18 @@ describe("photo upload reservations", () => {
     const pendingId = orderedUuid(6);
     const otherOwnerId = orderedUuid(7);
     const archivedId = orderedUuid(8);
+    const deletingGalleryReadyId = orderedUuid(9);
+    const deletePendingId = orderedUuid(10);
 
     try {
       await db
         .update(galleries)
         .set({ status: "archived" })
         .where(eq(galleries.id, archivedGallery.id));
+      await db
+        .update(galleries)
+        .set({ status: "deleting", deletionRequestedAt: new Date() })
+        .where(eq(galleries.id, deletingGallery.id));
 
       await db.insert(photos).values([
         photoFixture({
@@ -380,6 +401,17 @@ describe("photo upload reservations", () => {
           galleryId: archivedGallery.id,
           createdAt: new Date("2026-07-18T12:06:00.000Z"),
         }),
+        photoFixture({
+          id: deletingGalleryReadyId,
+          galleryId: deletingGallery.id,
+          createdAt: new Date("2026-07-18T12:07:00.000Z"),
+        }),
+        photoFixture({
+          id: deletePendingId,
+          galleryId: pageGallery.id,
+          status: "delete_pending",
+          createdAt: new Date("2026-07-18T12:08:00.000Z"),
+        }),
       ]);
 
       const firstGuestPage = await uploadQueries.listReadyMediaForGuest({
@@ -412,6 +444,7 @@ describe("photo upload reservations", () => {
       expect(new Set(allGuestIds).size).toBe(allGuestIds.length);
       expect(allGuestIds).toEqual([newestId, tieHighId, tieLowId, oldestId]);
       expect(allGuestIds).not.toContain(pendingId);
+      expect(allGuestIds).not.toContain(deletePendingId);
       expect(allGuestIds).not.toContain(otherOwnerId);
       expect(allGuestIds).not.toContain(archivedId);
 
@@ -428,6 +461,14 @@ describe("photo upload reservations", () => {
           galleryId: archivedGallery.id,
           slug: archivedGallery.slug,
           accessVersion: archivedGallery.accessVersion,
+          pageSize: 2,
+        }),
+      ).resolves.toEqual({ items: [], nextCursor: null });
+      await expect(
+        uploadQueries.listReadyMediaForGuest({
+          galleryId: deletingGallery.id,
+          slug: deletingGallery.slug,
+          accessVersion: deletingGallery.accessVersion,
           pageSize: 2,
         }),
       ).resolves.toEqual({ items: [], nextCursor: null });
@@ -467,6 +508,16 @@ describe("photo upload reservations", () => {
       ]).toEqual([newestId, tieHighId, tieLowId, oldestId]);
       await expect(
         uploadQueries.listReadyMediaForOwner({
+          ownerClerkId: owner,
+          galleryId: deletingGallery.id,
+          pageSize: 2,
+        }),
+      ).resolves.toMatchObject({
+        items: [expect.objectContaining({ id: deletingGalleryReadyId })],
+        nextCursor: null,
+      });
+      await expect(
+        uploadQueries.listReadyMediaForOwner({
           ownerClerkId: `${owner}-other`,
           galleryId: pageGallery.id,
           pageSize: 2,
@@ -479,6 +530,7 @@ describe("photo upload reservations", () => {
           emptyGallery.id,
           otherOwnerGallery.id,
           archivedGallery.id,
+          deletingGallery.id,
         ]),
       );
     }
@@ -723,6 +775,78 @@ describe("photo upload reservations", () => {
         });
       } finally {
         await db.delete(galleries).where(eq(galleries.id, lifecycleGallery.id));
+      }
+    },
+    15_000,
+  );
+
+  it(
+    "denies new reservations and finalization once a gallery is deleting",
+    async () => {
+      const deletingGallery = await galleryQueries.createGalleryForOwner(owner, {
+        name: `Upload Deleting ${randomUUID()}`,
+        eventDate: undefined,
+      });
+      const reservedBeforeDeleting = await uploadQueries.reservePhotoUpload({
+        galleryId: deletingGallery.id,
+        accessVersion: deletingGallery.accessVersion,
+        uploaderSessionHash: sessionHash,
+        input: {
+          slug: deletingGallery.slug,
+          idempotencyKey: randomUUID(),
+          mimeType: "image/jpeg",
+          byteSize,
+          originalFilename: "before-deleting.jpg",
+        },
+        ...createReservationIdentity(),
+      });
+
+      try {
+        expect(reservedBeforeDeleting.outcome).toBe("reserved");
+        if (reservedBeforeDeleting.outcome !== "reserved") {
+          throw new Error("Deleting lifecycle reservation was not created.");
+        }
+
+        const claim = await uploadQueries.claimPhotoForProcessing({
+          photoId: reservedBeforeDeleting.photo.id,
+          galleryId: deletingGallery.id,
+          uploaderSessionHash: sessionHash,
+        });
+        expect(claim?.processingStartedAt).toBeInstanceOf(Date);
+
+        await db
+          .update(galleries)
+          .set({ status: "deleting", deletionRequestedAt: new Date() })
+          .where(eq(galleries.id, deletingGallery.id));
+
+        await expect(
+          uploadQueries.reservePhotoUpload({
+            galleryId: deletingGallery.id,
+            accessVersion: deletingGallery.accessVersion,
+            uploaderSessionHash: sessionHash,
+            input: {
+              slug: deletingGallery.slug,
+              idempotencyKey: randomUUID(),
+              mimeType: "image/jpeg",
+              byteSize,
+              originalFilename: "after-deleting.jpg",
+            },
+            ...createReservationIdentity(),
+          }),
+        ).resolves.toEqual({ outcome: "unavailable" });
+        await expect(
+          uploadQueries.markPhotoReady({
+            photoId: reservedBeforeDeleting.photo.id,
+            galleryId: deletingGallery.id,
+            processingStartedAt: claim!.processingStartedAt!,
+            finalByteSize: byteSize,
+            mimeType: "image/jpeg",
+            width: 800,
+            height: 600,
+          }),
+        ).resolves.toEqual({ outcome: "unavailable" });
+      } finally {
+        await db.delete(galleries).where(eq(galleries.id, deletingGallery.id));
       }
     },
     15_000,

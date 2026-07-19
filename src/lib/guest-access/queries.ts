@@ -1,9 +1,10 @@
 import "server-only";
 
-import { and, eq, ne } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 
 import { db } from "@/db";
 import { galleries, type Gallery } from "@/db/schema";
+import { GUEST_ACCESSIBLE_GALLERY_STATUSES } from "@/lib/galleries/rules";
 
 export async function getGalleryBySlugForAccess(
   slug: string,
@@ -31,7 +32,7 @@ export async function getGalleryForIssuedUpload({
       and(
         eq(galleries.id, galleryId),
         eq(galleries.slug, slug),
-        ne(galleries.status, "archived"),
+        inArray(galleries.status, [...GUEST_ACCESSIBLE_GALLERY_STATUSES]),
       ),
     )
     .limit(1);
@@ -56,7 +57,7 @@ export async function getGalleryForGuestSession({
         eq(galleries.id, galleryId),
         eq(galleries.slug, slug),
         eq(galleries.accessVersion, accessVersion),
-        ne(galleries.status, "archived"),
+        inArray(galleries.status, [...GUEST_ACCESSIBLE_GALLERY_STATUSES]),
       ),
     )
     .limit(1);

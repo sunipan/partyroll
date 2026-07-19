@@ -22,26 +22,40 @@ describe("guest gallery authorization", () => {
     queries = await import("./queries");
     galleryQueries = await import("@/lib/galleries/queries");
 
-    const [openGallery, otherGallery, archivedGallery] = await Promise.all([
-      galleryQueries.createGalleryForOwner(owner, {
-        name: `Guest Open ${randomUUID()}`,
-        eventDate: undefined,
-      }),
-      galleryQueries.createGalleryForOwner(owner, {
-        name: `Guest Other ${randomUUID()}`,
-        eventDate: undefined,
-      }),
-      galleryQueries.createGalleryForOwner(owner, {
-        name: `Guest Archived ${randomUUID()}`,
-        eventDate: undefined,
-      }),
-    ]);
-    galleryIds = [openGallery.id, otherGallery.id, archivedGallery.id];
+    const [openGallery, otherGallery, archivedGallery, deletingGallery] =
+      await Promise.all([
+        galleryQueries.createGalleryForOwner(owner, {
+          name: `Guest Open ${randomUUID()}`,
+          eventDate: undefined,
+        }),
+        galleryQueries.createGalleryForOwner(owner, {
+          name: `Guest Other ${randomUUID()}`,
+          eventDate: undefined,
+        }),
+        galleryQueries.createGalleryForOwner(owner, {
+          name: `Guest Archived ${randomUUID()}`,
+          eventDate: undefined,
+        }),
+        galleryQueries.createGalleryForOwner(owner, {
+          name: `Guest Deleting ${randomUUID()}`,
+          eventDate: undefined,
+        }),
+      ]);
+    galleryIds = [
+      openGallery.id,
+      otherGallery.id,
+      archivedGallery.id,
+      deletingGallery.id,
+    ];
 
     await db
       .update(galleries)
       .set({ status: "archived" })
       .where(eq(galleries.id, archivedGallery.id));
+    await db
+      .update(galleries)
+      .set({ status: "deleting", deletionRequestedAt: new Date() })
+      .where(eq(galleries.id, deletingGallery.id));
   });
 
   afterAll(async () => {
@@ -100,6 +114,27 @@ describe("guest gallery authorization", () => {
         galleryId: gallery.id,
         slug: gallery.slug,
         accessVersion: gallery.accessVersion,
+      }),
+    ).resolves.toBeNull();
+  });
+
+  it("denies deleting galleries for guest sessions and issued uploads", async () => {
+    const [gallery] = await db
+      .select()
+      .from(galleries)
+      .where(eq(galleries.id, galleryIds[3]));
+
+    await expect(
+      queries.getGalleryForGuestSession({
+        galleryId: gallery.id,
+        slug: gallery.slug,
+        accessVersion: gallery.accessVersion,
+      }),
+    ).resolves.toBeNull();
+    await expect(
+      queries.getGalleryForIssuedUpload({
+        galleryId: gallery.id,
+        slug: gallery.slug,
       }),
     ).resolves.toBeNull();
   });

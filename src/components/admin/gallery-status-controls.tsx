@@ -9,12 +9,14 @@ const transitionLabels: Record<GalleryStatus, string> = {
   open: "Open gallery",
   closed: "Close gallery",
   archived: "Archive gallery",
+  deleting: "Deleting gallery",
 };
 
 const transitionDescriptions: Record<GalleryStatus, string> = {
   open: "Allow guests to view and upload once guest access is enabled.",
   closed: "Keep viewing available but stop new uploads once guest access is enabled.",
   archived: "Disable all guest access without deleting the gallery.",
+  deleting: "Deletion is in progress. Guest access and uploads stay disabled.",
 };
 
 export function GalleryStatusControls({

@@ -1,6 +1,7 @@
 import "server-only";
 
 import type { Gallery, Photo } from "@/db/schema";
+import { GUEST_ACCESSIBLE_GALLERY_STATUSES } from "@/lib/galleries/rules";
 import {
   isSupportedImageMimeType,
   isSupportedVideoMimeType,
@@ -325,7 +326,7 @@ const defaultAdminLookupDeps: AdminLookupDeps = {
 };
 
 async function getMediaAssetForGuestFromDatabase(input: GuestMediaAssetQuery) {
-  const [{ and, eq, ne }, { db }, { galleries, photos }] = await Promise.all([
+  const [{ and, eq, inArray }, { db }, { galleries, photos }] = await Promise.all([
     import("drizzle-orm"),
     import("@/db"),
     import("@/db/schema"),
@@ -342,7 +343,7 @@ async function getMediaAssetForGuestFromDatabase(input: GuestMediaAssetQuery) {
         eq(galleries.id, input.galleryId),
         eq(galleries.slug, input.slug),
         eq(galleries.accessVersion, input.accessVersion),
-        ne(galleries.status, "archived"),
+        inArray(galleries.status, [...GUEST_ACCESSIBLE_GALLERY_STATUSES]),
       ),
     )
     .limit(1);

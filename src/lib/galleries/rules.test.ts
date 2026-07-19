@@ -66,7 +66,10 @@ describe("gallery rules", () => {
     expect(getAllowedGalleryTransitions("open")).toEqual(["closed", "archived"]);
     expect(canTransitionGallery("closed", "open")).toBe(true);
     expect(canTransitionGallery("archived", "closed")).toBe(true);
+    expect(getAllowedGalleryTransitions("deleting")).toEqual([]);
     expect(canTransitionGallery("archived", "open")).toBe(false);
+    expect(canTransitionGallery("open", "deleting")).toBe(false);
+    expect(canTransitionGallery("deleting", "open")).toBe(false);
     expect(canTransitionGallery("open", "open")).toBe(false);
   });
 });

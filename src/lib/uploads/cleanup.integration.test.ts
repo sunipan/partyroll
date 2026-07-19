@@ -156,6 +156,7 @@ describe("expired upload reservation cleanup", () => {
         gallery,
         reservationExpiresAt: new Date(now.getTime() + 60_000),
       });
+      const ownerDeletingReadyId = randomUUID();
 
       await db
         .update(photos)
@@ -180,6 +181,29 @@ describe("expired upload reservation cleanup", () => {
           ),
         })
         .where(eq(photos.id, activeProcessing.id));
+      await db.insert(photos).values({
+        id: ownerDeletingReadyId,
+        galleryId: gallery.id,
+        status: "delete_pending",
+        idempotencyKey: randomUUID(),
+        uploaderSessionHash: sessionHash,
+        quarantineObjectKey: `quarantine/${gallery.id}/${ownerDeletingReadyId}`,
+        declaredMimeType: "image/jpeg",
+        originalFilename: "owner-deleting.jpg",
+        mediaKind: "image",
+        originalObjectKey: `originals/${gallery.id}/${ownerDeletingReadyId}`,
+        displayObjectKey: `photos/${gallery.id}/${ownerDeletingReadyId}/display.jpg`,
+        thumbnailObjectKey: `photos/${gallery.id}/${ownerDeletingReadyId}/thumbnail.jpg`,
+        declaredByteSize,
+        mimeType: "image/jpeg",
+        byteSize: declaredByteSize + 512,
+        width: 800,
+        height: 600,
+        reservationExpiresAt: expiredAt(now),
+        readyAt: new Date(now.getTime() - 60_000),
+        deletionRequestedAt: now,
+        deletionAccountedAt: now,
+      });
 
       const eligibleIds = [
         eligiblePending.id,
@@ -221,6 +245,7 @@ describe("expired upload reservation cleanup", () => {
             graceProtected.id,
             activeProcessing.id,
             unexpired.id,
+            ownerDeletingReadyId,
           ]),
         );
       const byId = new Map(rows.map((row) => [row.id, row]));
@@ -234,6 +259,16 @@ describe("expired upload reservation cleanup", () => {
       expect(byId.get(graceProtected.id)?.status).toBe("pending");
       expect(byId.get(activeProcessing.id)?.status).toBe("processing");
       expect(byId.get(unexpired.id)?.status).toBe("pending");
+      expect(byId.get(ownerDeletingReadyId)).toMatchObject({
+        status: "delete_pending",
+        processingStartedAt: null,
+      });
+
+      const quarantineCandidates =
+        await uploadQueries.listPhotosAwaitingQuarantineCleanup({ now });
+      expect(quarantineCandidates.map((photo) => photo.id)).not.toContain(
+        ownerDeletingReadyId,
+      );
     },
     15_000,
   );

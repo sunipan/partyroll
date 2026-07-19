@@ -93,6 +93,12 @@ describe("ready media delivery and deletion", () => {
       completionAttempts: 1,
       nextProcessingAttemptAt: null,
       rejectedAt: null,
+      deletionRequestedAt: null,
+      deletionAccountedAt: null,
+      deletionAttempts: 0,
+      nextDeletionAttemptAt: null,
+      deletionFailedAt: null,
+      deletionFailureReason: null,
     });
   });
 

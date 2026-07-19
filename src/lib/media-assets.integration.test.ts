@@ -20,12 +20,15 @@ let mainGallery: Awaited<ReturnType<typeof galleryQueries.createGalleryForOwner>
 let otherGallery: Awaited<ReturnType<typeof galleryQueries.createGalleryForOwner>>;
 let otherOwnerGallery: Awaited<ReturnType<typeof galleryQueries.createGalleryForOwner>>;
 let archivedGallery: Awaited<ReturnType<typeof galleryQueries.createGalleryForOwner>>;
+let deletingGallery: Awaited<ReturnType<typeof galleryQueries.createGalleryForOwner>>;
 const readyImageId = randomUUID();
 const readyVideoId = randomUUID();
 const pendingImageId = randomUUID();
+const deletePendingImageId = randomUUID();
 const otherGalleryImageId = randomUUID();
 const otherOwnerImageId = randomUUID();
 const archivedImageId = randomUUID();
+const deletingGalleryImageId = randomUUID();
 
 describe("authorized media asset DB lookups", () => {
   beforeAll(async () => {
@@ -34,7 +37,13 @@ describe("authorized media asset DB lookups", () => {
     galleryQueries = await import("@/lib/galleries/queries");
     mediaAssets = await import("./media-assets");
 
-    [mainGallery, otherGallery, otherOwnerGallery, archivedGallery] = await Promise.all([
+    [
+      mainGallery,
+      otherGallery,
+      otherOwnerGallery,
+      archivedGallery,
+      deletingGallery,
+    ] = await Promise.all([
       galleryQueries.createGalleryForOwner(owner, {
         name: `Assets Main ${randomUUID()}`,
         eventDate: undefined,
@@ -51,25 +60,36 @@ describe("authorized media asset DB lookups", () => {
         name: `Assets Archived ${randomUUID()}`,
         eventDate: undefined,
       }),
+      galleryQueries.createGalleryForOwner(owner, {
+        name: `Assets Deleting ${randomUUID()}`,
+        eventDate: undefined,
+      }),
     ]);
     galleryIds = [
       mainGallery.id,
       otherGallery.id,
       otherOwnerGallery.id,
       archivedGallery.id,
+      deletingGallery.id,
     ];
 
     await db
       .update(galleries)
       .set({ status: "archived" })
       .where(inArray(galleries.id, [archivedGallery.id]));
+    await db
+      .update(galleries)
+      .set({ status: "deleting", deletionRequestedAt: new Date() })
+      .where(inArray(galleries.id, [deletingGallery.id]));
     await db.insert(photos).values([
       photoFixture({ id: readyImageId, galleryId: mainGallery.id, kind: "image" }),
       photoFixture({ id: readyVideoId, galleryId: mainGallery.id, kind: "video" }),
       photoFixture({ id: pendingImageId, galleryId: mainGallery.id, kind: "image", status: "pending" }),
+      photoFixture({ id: deletePendingImageId, galleryId: mainGallery.id, kind: "image", status: "delete_pending" }),
       photoFixture({ id: otherGalleryImageId, galleryId: otherGallery.id, kind: "image" }),
       photoFixture({ id: otherOwnerImageId, galleryId: otherOwnerGallery.id, kind: "image" }),
       photoFixture({ id: archivedImageId, galleryId: archivedGallery.id, kind: "image" }),
+      photoFixture({ id: deletingGalleryImageId, galleryId: deletingGallery.id, kind: "image" }),
     ]);
   }, 20_000);
 
@@ -95,7 +115,9 @@ describe("authorized media asset DB lookups", () => {
       { accessVersion: mainGallery.accessVersion + 1, mediaId: readyImageId, variant: "display" as const },
       { mediaId: otherGalleryImageId, variant: "display" as const },
       { galleryId: archivedGallery.id, slug: archivedGallery.slug, mediaId: archivedImageId, variant: "display" as const },
+      { galleryId: deletingGallery.id, slug: deletingGallery.slug, mediaId: deletingGalleryImageId, variant: "display" as const },
       { mediaId: pendingImageId, variant: "display" as const },
+      { mediaId: deletePendingImageId, variant: "display" as const },
       { mediaId: randomUUID(), variant: "display" as const },
       { mediaId: readyImageId, variant: "video" as const },
       { mediaId: readyVideoId, variant: "thumbnail" as const },
@@ -136,6 +158,7 @@ describe("authorized media asset DB lookups", () => {
       { ownerClerkId: otherOwner, galleryId: mainGallery.id, mediaId: readyImageId, variant: "display" as const },
       { ownerClerkId: owner, galleryId: mainGallery.id, mediaId: otherGalleryImageId, variant: "display" as const },
       { ownerClerkId: owner, galleryId: mainGallery.id, mediaId: pendingImageId, variant: "display" as const },
+      { ownerClerkId: owner, galleryId: mainGallery.id, mediaId: deletePendingImageId, variant: "display" as const },
       { ownerClerkId: owner, galleryId: mainGallery.id, mediaId: randomUUID(), variant: "display" as const },
       { ownerClerkId: owner, galleryId: mainGallery.id, mediaId: readyVideoId, variant: "thumbnail" as const },
     ];
@@ -150,14 +173,16 @@ function photoFixture(input: {
   id: string;
   galleryId: string;
   kind: "image" | "video";
-  status?: "ready" | "pending";
+  status?: "ready" | "pending" | "delete_pending";
 }) {
-  const ready = input.status !== "pending";
+  const final = input.status !== "pending";
   const video = input.kind === "video";
+  const deletionRequestedAt =
+    input.status === "delete_pending" ? new Date() : null;
   return {
     id: input.id,
     galleryId: input.galleryId,
-    status: ready ? ("ready" as const) : ("pending" as const),
+    status: input.status ?? ("ready" as const),
     idempotencyKey: randomUUID(),
     uploaderSessionHash: "a".repeat(64),
     quarantineObjectKey: `assets/${input.id}/quarantine`,
@@ -168,11 +193,13 @@ function photoFixture(input: {
     displayObjectKey: video ? null : `assets/${input.id}/display.jpg`,
     thumbnailObjectKey: video ? null : `assets/${input.id}/thumbnail.jpg`,
     declaredByteSize: 1024,
-    mimeType: ready ? (video ? "video/mp4" : "image/jpeg") : null,
-    byteSize: ready ? 2048 : null,
-    width: ready && !video ? 800 : null,
-    height: ready && !video ? 600 : null,
+    mimeType: final ? (video ? "video/mp4" : "image/jpeg") : null,
+    byteSize: final ? 2048 : null,
+    width: final && !video ? 800 : null,
+    height: final && !video ? 600 : null,
     reservationExpiresAt: new Date(Date.now() + 15 * 60 * 1000),
-    readyAt: ready ? new Date() : null,
+    readyAt: final ? new Date() : null,
+    deletionRequestedAt,
+    deletionAccountedAt: deletionRequestedAt,
   };
 }

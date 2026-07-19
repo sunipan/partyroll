@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   MAX_SELECTED_UPLOADS,
   MAX_SOURCE_BYTES,
+  photoStatusSchema,
   reserveUploadInputSchema,
 } from "./rules";
 
@@ -40,6 +41,11 @@ describe("upload rules", () => {
         mimeType: "video/webm",
       }).success,
     ).toBe(true);
+  });
+
+  it("recognizes the explicit retryable media deletion status", () => {
+    expect(photoStatusSchema.safeParse("delete_pending").success).toBe(true);
+    expect(photoStatusSchema.safeParse("deleted").success).toBe(false);
   });
 
   it("rejects unsupported files, oversized files, and malformed identifiers", () => {

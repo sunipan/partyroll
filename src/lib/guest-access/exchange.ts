@@ -1,6 +1,7 @@
 import "server-only";
 
 import { env } from "@/lib/env";
+import { isGalleryGuestAccessible } from "@/lib/galleries/rules";
 
 import { parseGalleryAccessCode, verifyGalleryAccessCode } from "./access-code";
 import { getGalleryBySlugForAccess } from "./queries";
@@ -25,7 +26,7 @@ export async function exchangeGalleryAccessCode(input: string) {
     secret: env.INVITE_SECRET,
   });
 
-  if (!gallery || !valid || gallery.status === "archived") {
+  if (!gallery || !valid || !isGalleryGuestAccessible(gallery.status)) {
     return null;
   }
 

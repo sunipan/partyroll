@@ -1,7 +1,15 @@
 import { z } from "zod";
 
-export const galleryStatusSchema = z.enum(["open", "closed", "archived"]);
+export const galleryStatusSchema = z.enum([
+  "open",
+  "closed",
+  "archived",
+  "deleting",
+]);
 export type GalleryStatus = z.infer<typeof galleryStatusSchema>;
+export type GuestAccessibleGalleryStatus = Extract<GalleryStatus, "open" | "closed">;
+
+export const GUEST_ACCESSIBLE_GALLERY_STATUSES = ["open", "closed"] as const;
 
 const galleryNameSchema = z
   .string()
@@ -32,6 +40,7 @@ const allowedTransitions: Record<GalleryStatus, readonly GalleryStatus[]> = {
   open: ["closed", "archived"],
   closed: ["open", "archived"],
   archived: ["closed"],
+  deleting: [],
 };
 
 export function getAllowedGalleryTransitions(
@@ -45,6 +54,14 @@ export function canTransitionGallery(
   nextStatus: GalleryStatus,
 ): boolean {
   return allowedTransitions[currentStatus].includes(nextStatus);
+}
+
+export function isGalleryGuestAccessible(
+  status: GalleryStatus,
+): status is GuestAccessibleGalleryStatus {
+  return GUEST_ACCESSIBLE_GALLERY_STATUSES.includes(
+    status as GuestAccessibleGalleryStatus,
+  );
 }
 
 export function slugifyGalleryName(name: string): string {

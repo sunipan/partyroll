@@ -17,6 +17,7 @@ export const galleryStatus = pgEnum("gallery_status", [
   "open",
   "closed",
   "archived",
+  "deleting",
 ]);
 
 export const photoStatus = pgEnum("photo_status", [
@@ -25,6 +26,7 @@ export const photoStatus = pgEnum("photo_status", [
   "ready",
   "rejected",
   "deleting",
+  "delete_pending",
 ]);
 
 export const mediaKind = pgEnum("media_kind", ["image", "video"]);
@@ -45,6 +47,15 @@ export const galleries = pgTable(
     reservedBytes: bigint("reserved_bytes", { mode: "number" })
       .default(0)
       .notNull(),
+    deletionRequestedAt: timestamp("deletion_requested_at", {
+      withTimezone: true,
+    }),
+    deletionAttempts: integer("deletion_attempts").default(0).notNull(),
+    nextDeletionAttemptAt: timestamp("next_deletion_attempt_at", {
+      withTimezone: true,
+    }),
+    deletionFailedAt: timestamp("deletion_failed_at", { withTimezone: true }),
+    deletionFailureReason: text("deletion_failure_reason"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .defaultNow()
       .notNull(),
@@ -57,6 +68,10 @@ export const galleries = pgTable(
     index("galleries_owner_created_at_idx").on(
       table.ownerClerkId,
       table.createdAt,
+    ),
+    index("galleries_deletion_retry_idx").on(
+      table.status,
+      table.nextDeletionAttemptAt,
     ),
     check(
       "galleries_access_version_positive",
@@ -72,6 +87,22 @@ export const galleries = pgTable(
     check(
       "galleries_reserved_bytes_nonnegative",
       sql`${table.reservedBytes} >= 0`,
+    ),
+    check(
+      "galleries_deletion_attempts_nonnegative",
+      sql`${table.deletionAttempts} >= 0`,
+    ),
+    check(
+      "galleries_deleting_metadata",
+      sql`((${table.status}::text = 'deleting' and ${table.deletionRequestedAt} is not null) or (${table.status}::text <> 'deleting' and ${table.deletionRequestedAt} is null and ${table.deletionAttempts} = 0 and ${table.nextDeletionAttemptAt} is null and ${table.deletionFailedAt} is null and ${table.deletionFailureReason} is null))`,
+    ),
+    check(
+      "galleries_deletion_failure_reason_not_blank",
+      sql`${table.deletionFailureReason} is null or length(btrim(${table.deletionFailureReason})) > 0`,
+    ),
+    check(
+      "galleries_deletion_failure_metadata",
+      sql`((${table.deletionFailedAt} is null and ${table.nextDeletionAttemptAt} is null and ${table.deletionFailureReason} is null) or (${table.deletionFailedAt} is not null and ${table.nextDeletionAttemptAt} is not null and ${table.deletionFailureReason} is not null and ${table.deletionAttempts} > 0))`,
     ),
   ],
 );
@@ -116,6 +147,18 @@ export const photos = pgTable(
       .notNull(),
     readyAt: timestamp("ready_at", { withTimezone: true }),
     rejectedAt: timestamp("rejected_at", { withTimezone: true }),
+    deletionRequestedAt: timestamp("deletion_requested_at", {
+      withTimezone: true,
+    }),
+    deletionAccountedAt: timestamp("deletion_accounted_at", {
+      withTimezone: true,
+    }),
+    deletionAttempts: integer("deletion_attempts").default(0).notNull(),
+    nextDeletionAttemptAt: timestamp("next_deletion_attempt_at", {
+      withTimezone: true,
+    }),
+    deletionFailedAt: timestamp("deletion_failed_at", { withTimezone: true }),
+    deletionFailureReason: text("deletion_failure_reason"),
   },
   (table) => [
     uniqueIndex("photos_gallery_session_idempotency_unique").on(
@@ -132,13 +175,17 @@ export const photos = pgTable(
       table.status,
       table.reservationExpiresAt,
     ),
+    index("photos_deletion_retry_idx").on(
+      table.status,
+      table.nextDeletionAttemptAt,
+    ),
     check("photos_declared_byte_size_positive", sql`${table.declaredByteSize} > 0`),
     check("photos_byte_size_positive", sql`${table.byteSize} is null or ${table.byteSize} > 0`),
     check("photos_width_positive", sql`${table.width} is null or ${table.width} > 0`),
     check("photos_height_positive", sql`${table.height} is null or ${table.height} > 0`),
     check(
       "photos_image_derivatives_required",
-      sql`(${table.mediaKind} <> 'image') or (${table.displayObjectKey} is not null and ${table.thumbnailObjectKey} is not null and (${table.status} <> 'ready' or (${table.width} is not null and ${table.height} is not null)))`,
+      sql`(${table.mediaKind} <> 'image') or (${table.displayObjectKey} is not null and ${table.thumbnailObjectKey} is not null and (${table.status}::text not in ('ready', 'delete_pending') or (${table.width} is not null and ${table.height} is not null)))`,
     ),
     check(
       "photos_video_original_only",
@@ -174,11 +221,11 @@ export const photos = pgTable(
     ),
     check(
       "photos_ready_final_metadata_required",
-      sql`(${table.status} <> 'ready') or (${table.readyAt} is not null and ${table.mimeType} is not null and ${table.byteSize} is not null)`,
+      sql`(${table.status}::text not in ('ready', 'delete_pending')) or (${table.readyAt} is not null and ${table.mimeType} is not null and ${table.byteSize} is not null)`,
     ),
     check(
       "photos_non_ready_final_metadata_absent",
-      sql`(${table.status} = 'ready') or (${table.readyAt} is null and ${table.mimeType} is null and ${table.byteSize} is null and ${table.width} is null and ${table.height} is null)`,
+      sql`(${table.status}::text in ('ready', 'delete_pending')) or (${table.readyAt} is null and ${table.mimeType} is null and ${table.byteSize} is null and ${table.width} is null and ${table.height} is null)`,
     ),
     check(
       "photos_final_mime_type_matches_media_kind",
@@ -187,6 +234,22 @@ export const photos = pgTable(
     check(
       "photos_completion_attempts_nonnegative",
       sql`${table.completionAttempts} >= 0`,
+    ),
+    check(
+      "photos_deletion_attempts_nonnegative",
+      sql`${table.deletionAttempts} >= 0`,
+    ),
+    check(
+      "photos_delete_pending_metadata",
+      sql`((${table.status}::text = 'delete_pending' and ${table.deletionRequestedAt} is not null and ${table.deletionAccountedAt} is not null) or (${table.status}::text <> 'delete_pending' and ${table.deletionRequestedAt} is null and ${table.deletionAccountedAt} is null and ${table.deletionAttempts} = 0 and ${table.nextDeletionAttemptAt} is null and ${table.deletionFailedAt} is null and ${table.deletionFailureReason} is null))`,
+    ),
+    check(
+      "photos_deletion_failure_reason_not_blank",
+      sql`${table.deletionFailureReason} is null or length(btrim(${table.deletionFailureReason})) > 0`,
+    ),
+    check(
+      "photos_deletion_failure_metadata",
+      sql`((${table.deletionFailedAt} is null and ${table.nextDeletionAttemptAt} is null and ${table.deletionFailureReason} is null) or (${table.deletionFailedAt} is not null and ${table.nextDeletionAttemptAt} is not null and ${table.deletionFailureReason} is not null and ${table.deletionAttempts} > 0))`,
     ),
   ],
 );

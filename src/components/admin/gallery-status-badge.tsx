@@ -5,6 +5,7 @@ const statusLabels: Record<GalleryStatus, string> = {
   open: "Open",
   closed: "Closed",
   archived: "Archived",
+  deleting: "Deleting",
 };
 
 export function GalleryStatusBadge({ status }: { status: GalleryStatus }) {

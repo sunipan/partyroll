@@ -86,6 +86,15 @@ export type GalleryUpdateResult =
   | { outcome: "not-found" }
   | { outcome: "invalid-transition" };
 
+export const GALLERY_DELETION_RETRY_MESSAGE =
+  "Deletion could not finish. Try again.";
+
+export type GalleryDeletionResult =
+  | { outcome: "deleted"; gallery: Gallery }
+  | { outcome: "retryable-error"; gallery: Gallery; message: string }
+  | { outcome: "name-mismatch" }
+  | { outcome: "not-found" };
+
 export async function updateGalleryStatusForOwner({
   ownerClerkId,
   galleryId,
@@ -120,6 +129,142 @@ export async function updateGalleryStatusForOwner({
   return gallery
     ? { outcome: "updated", gallery }
     : { outcome: "invalid-transition" };
+}
+
+export async function deleteGalleryForOwner({
+  ownerClerkId,
+  galleryId,
+  confirmationName,
+  now = new Date(),
+}: {
+  ownerClerkId: string;
+  galleryId: string;
+  confirmationName: string;
+  now?: Date;
+}): Promise<GalleryDeletionResult> {
+  const claimed = await markGalleryDeletingForOwner({
+    ownerClerkId,
+    galleryId,
+    confirmationName,
+    now,
+  });
+
+  if (claimed.outcome !== "deleting") {
+    return claimed;
+  }
+
+  let objectDeletion: Awaited<ReturnType<typeof deleteGalleryStorageObjects>>;
+  try {
+    objectDeletion = await deleteGalleryStorageObjects(galleryId);
+  } catch (error) {
+    console.error("Failed to delete gallery storage objects", error);
+    return retryableGalleryDeletion(claimed.gallery);
+  }
+
+  if (objectDeletion.status !== "complete") {
+    return retryableGalleryDeletion(claimed.gallery);
+  }
+
+  try {
+    const deleted = await db.transaction(async (tx) => {
+      const [gallery] = await tx
+        .delete(galleries)
+        .where(
+          and(
+            eq(galleries.id, galleryId),
+            eq(galleries.ownerClerkId, ownerClerkId),
+            eq(galleries.status, "deleting"),
+          ),
+        )
+        .returning();
+
+      return gallery ?? null;
+    });
+
+    return deleted
+      ? { outcome: "deleted", gallery: deleted }
+      : { outcome: "not-found" };
+  } catch (error) {
+    console.error("Failed to delete gallery row", error);
+    return retryableGalleryDeletion(claimed.gallery);
+  }
+}
+
+async function markGalleryDeletingForOwner({
+  ownerClerkId,
+  galleryId,
+  confirmationName,
+  now,
+}: {
+  ownerClerkId: string;
+  galleryId: string;
+  confirmationName: string;
+  now: Date;
+}): Promise<
+  | { outcome: "deleting"; gallery: Gallery }
+  | { outcome: "name-mismatch" }
+  | { outcome: "not-found" }
+> {
+  return db.transaction(async (tx) => {
+    const [current] = await tx
+      .select()
+      .from(galleries)
+      .where(
+        and(
+          eq(galleries.id, galleryId),
+          eq(galleries.ownerClerkId, ownerClerkId),
+        ),
+      )
+      .limit(1)
+      .for("update");
+
+    if (!current) {
+      return { outcome: "not-found" };
+    }
+
+    if (current.name !== confirmationName) {
+      return { outcome: "name-mismatch" };
+    }
+
+    if (current.status === "deleting") {
+      return { outcome: "deleting", gallery: current };
+    }
+
+    const [updated] = await tx
+      .update(galleries)
+      .set({
+        status: "deleting",
+        deletionRequestedAt: now,
+        updatedAt: now,
+      })
+      .where(
+        and(
+          eq(galleries.id, galleryId),
+          eq(galleries.ownerClerkId, ownerClerkId),
+          eq(galleries.status, current.status),
+        ),
+      )
+      .returning();
+
+    return updated
+      ? { outcome: "deleting", gallery: updated }
+      : { outcome: "not-found" };
+  });
+}
+
+async function deleteGalleryStorageObjects(galleryId: string) {
+  const { deleteGalleryObjects } = await import(
+    "@/lib/uploads/gallery-object-deletion"
+  );
+  return deleteGalleryObjects({ galleryId });
+}
+
+function retryableGalleryDeletion(gallery: Gallery): GalleryDeletionResult {
+  return {
+    outcome: "retryable-error",
+    gallery,
+    message: GALLERY_DELETION_RETRY_MESSAGE,
+  };
 }
 
 export async function regenerateGalleryAccessForOwner(

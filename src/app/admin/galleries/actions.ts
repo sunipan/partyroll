@@ -108,6 +108,47 @@ export async function regenerateGalleryAccessAction(formData: FormData) {
   revalidatePath(`/admin/galleries/${input.data.galleryId}`);
 }
 
+const deleteGallerySchema = z.object({
+  galleryId: galleryIdSchema,
+  confirmationName: z.string().max(100),
+});
+
+export async function deleteGalleryAction(formData: FormData) {
+  const { userId } = await requireAdmin();
+  const input = deleteGallerySchema.safeParse({
+    galleryId: formData.get("galleryId"),
+    confirmationName: formData.get("confirmationName"),
+  });
+
+  if (!input.success) {
+    redirect("/admin");
+  }
+
+  const { deleteGalleryForOwner } = await import("@/lib/galleries/queries");
+  const result = await deleteGalleryForOwner({
+    ownerClerkId: userId,
+    galleryId: input.data.galleryId,
+    confirmationName: input.data.confirmationName,
+  });
+
+  if (result.outcome === "not-found") {
+    redirect("/admin");
+  }
+
+  if (result.outcome === "name-mismatch") {
+    redirect(getGalleryDeletionConfirmationPath(input.data.galleryId));
+  }
+
+  revalidatePath("/admin");
+  revalidatePath(`/admin/galleries/${input.data.galleryId}`);
+
+  if (result.outcome === "retryable-error") {
+    redirect(getGalleryDeletionRetryPath(input.data.galleryId));
+  }
+
+  redirect("/admin");
+}
+
 const deleteMediaSchema = z.object({
   galleryId: galleryIdSchema,
   photoId: z.uuid(),
@@ -160,4 +201,12 @@ function getMediaDeletionRetryPath({
   const params = new URLSearchParams({ deleteError: photoId });
   if (cursor) params.set("cursor", cursor);
   return `/admin/galleries/${galleryId}?${params.toString()}`;
+}
+
+function getGalleryDeletionConfirmationPath(galleryId: string) {
+  return `/admin?confirmError=${encodeURIComponent(galleryId)}`;
+}
+
+function getGalleryDeletionRetryPath(galleryId: string) {
+  return `/admin?deleteError=${encodeURIComponent(galleryId)}`;
 }

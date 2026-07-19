@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 
 import { AdminHeader } from "@/components/admin/admin-header";
+import { GalleryDeletionControl } from "@/components/admin/gallery-deletion-control";
 import { GalleryStatusBadge } from "@/components/admin/gallery-status-badge";
 import { buttonVariants } from "@/components/ui/button";
 import {
@@ -19,13 +20,20 @@ export const metadata: Metadata = {
   title: "Dashboard",
 };
 
+type AdminPageProps = {
+  searchParams?: Promise<{ [key: string]: string | string[] | undefined }>;
+};
+
 const dateFormatter = new Intl.DateTimeFormat("en", {
   dateStyle: "long",
   timeZone: "UTC",
 });
 
-export default async function AdminPage() {
+export default async function AdminPage({ searchParams }: AdminPageProps) {
   const { userId } = await requireAdmin();
+  const { confirmError, deleteError } = await getGalleryDeletionSearchParams(
+    searchParams,
+  );
   const galleries = await listGalleriesForOwner(userId);
 
   return (
@@ -79,13 +87,22 @@ export default async function AdminPage() {
                     <GalleryStatusBadge status={gallery.status} />
                   </CardAction>
                 </CardHeader>
-                <CardFooter>
+                <CardFooter className="flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between">
                   <Link
                     href={`/admin/galleries/${gallery.id}`}
                     className={buttonVariants({ variant: "outline", size: "sm" })}
                   >
                     Manage gallery
                   </Link>
+                  <GalleryDeletionControl
+                    galleryId={gallery.id}
+                    galleryName={gallery.name}
+                    confirmationFailed={confirmError === gallery.id}
+                    deletionFailed={
+                      deleteError === gallery.id || gallery.status === "deleting"
+                    }
+                    isDeleting={gallery.status === "deleting"}
+                  />
                 </CardFooter>
               </Card>
             ))}
@@ -94,4 +111,17 @@ export default async function AdminPage() {
       </section>
     </main>
   );
+}
+
+async function getGalleryDeletionSearchParams(
+  searchParams?: Promise<{ [key: string]: string | string[] | undefined }>,
+) {
+  const params = searchParams ? await searchParams : undefined;
+  const confirmError = params?.confirmError;
+  const deleteError = params?.deleteError;
+
+  return {
+    confirmError: typeof confirmError === "string" ? confirmError : undefined,
+    deleteError: typeof deleteError === "string" ? deleteError : undefined,
+  };
 }

@@ -3,8 +3,18 @@
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
-import { Check, ImagePlus, LoaderCircle, RotateCcw, Trash2, Video } from "lucide-react";
+import {
+  AlertCircle,
+  Check,
+  ImagePlus,
+  LoaderCircle,
+  RotateCcw,
+  ShieldCheck,
+  Trash2,
+  Video,
+} from "lucide-react";
 
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -23,6 +33,7 @@ import {
   supportedUploadMimeTypes,
   type SupportedUploadMimeType,
 } from "@/lib/uploads/client-limits";
+import { cn } from "@/lib/utils";
 
 import { createCoalescedRefresh, type CoalescedRefresh } from "./coalesced-refresh";
 
@@ -435,135 +446,184 @@ export function PhotoUploadQueue({ slug }: { slug: string }) {
   ).length;
 
   return (
-    <Card className="mb-10">
-      <CardHeader>
-        <CardTitle>Add photos and videos</CardTitle>
-        <CardDescription>
-          Choose up to 100 photos or videos. Partyroll uploads three at a time,
-          keeps originals private, prepares image display copies, and stores
-          videos as private originals only.
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-5">
-        <div className="flex flex-wrap gap-3">
-          <Button
-            type="button"
-            variant="outline"
-            onClick={() => inputRef.current?.click()}
-            disabled={isUploading || items.length >= MAX_SELECTED_UPLOADS}
-          >
-            <ImagePlus aria-hidden="true" />
-            Choose files
-          </Button>
-          <Input
-            ref={inputRef}
-            className="sr-only"
-            type="file"
-            accept="image/jpeg,image/png,image/webp,image/heic,image/heif,video/mp4,video/quicktime,video/webm,.heic,.heif,.mp4,.mov,.webm"
-            multiple
-            onChange={(event) => handleFiles(event.target.files)}
-            aria-label="Choose photos or videos to upload"
-          />
-          {queuedCount > 0 ? (
-            <Button
-              type="button"
-              onClick={uploadQueuedItems}
-              disabled={isUploading}
-            >
-              {isUploading ? (
-                <LoaderCircle aria-hidden="true" className="animate-spin" />
-              ) : null}
-              Upload {queuedCount} {queuedCount === 1 ? "file" : "files"}
-            </Button>
-          ) : null}
-        </div>
-
-        <div aria-live="polite" className="text-sm text-muted-foreground">
-          {selectionError ? (
-            <p className="text-destructive">{selectionError}</p>
-          ) : items.length > 0 ? (
-            <p>
-              {readyCount} of {items.length} files uploaded.
-            </p>
-          ) : (
-            <p>
-              JPEG, PNG, WebP, HEIC, and HEIF images up to 100 MB; MP4, MOV,
-              and WebM videos up to 150 MB.
-            </p>
-          )}
-        </div>
-
-        {items.length > 0 ? (
-          <ul className="grid gap-3 sm:grid-cols-2">
-            {items.map((item) => (
-              <li
-                key={item.localId}
-                className="flex gap-3 rounded-xl border bg-background p-3"
+    <section aria-labelledby="guest-upload-title" id="guest-upload">
+      <Card className="mb-10 gap-0 border-primary/15 py-0">
+        <CardHeader className="border-b border-dashed border-border px-5 py-5 sm:px-6 sm:py-6">
+          <div className="flex items-start gap-3">
+            <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-secondary text-primary">
+              <ImagePlus aria-hidden="true" className="size-5" />
+            </span>
+            <div className="min-w-0">
+              <CardTitle className="text-xl sm:text-2xl">
+                <h2 id="guest-upload-title">Add to the roll</h2>
+              </CardTitle>
+              <CardDescription className="mt-1 max-w-2xl leading-6">
+                Choose up to 100 photos or videos. Partyroll sends three at a
+                time and keeps every original private to this gallery.
+              </CardDescription>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-5 px-5 py-5 sm:px-6 sm:py-6">
+          <div className="rounded-xl border border-dashed border-primary/25 bg-paper/60 p-4 sm:flex sm:items-center sm:justify-between sm:gap-5">
+            <div className="mb-4 min-w-0 sm:mb-0">
+              <p className="font-heading text-base font-semibold">Choose your party moments</p>
+              <p className="mt-1 text-xs leading-5 text-muted-foreground sm:text-sm">
+                Images up to 100 MB · Videos up to 150 MB
+              </p>
+            </div>
+            <div className="flex flex-col gap-2 sm:flex-row">
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full sm:w-auto"
+                onClick={() => inputRef.current?.click()}
+                disabled={isUploading || items.length >= MAX_SELECTED_UPLOADS}
               >
-                <div className="relative size-20 shrink-0 overflow-hidden rounded-lg bg-muted">
-                  {item.previewUrl ? (
-                    <Image
-                      src={item.previewUrl}
-                      alt=""
-                      fill
-                      unoptimized
-                      className="object-cover"
-                    />
-                  ) : item.status !== "ready" && isVideoMimeType(item.mimeType) ? (
-                    <div className="flex size-full items-center justify-center text-primary">
-                      <Video aria-hidden="true" className="size-7" />
-                    </div>
-                  ) : (
-                    <div className="flex size-full items-center justify-center text-primary">
-                      <Check aria-hidden="true" className="size-7" />
-                    </div>
-                  )}
-                </div>
-                <div className="min-w-0 flex-1 space-y-2">
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-medium">{item.fileName}</p>
-                      <p className="text-xs text-muted-foreground">
-                        {formatBytes(item.fileSize)} · {getStatusLabel(item.status)}
-                      </p>
-                    </div>
-                    {item.status === "ready" ? (
-                      <Check aria-label="Uploaded" className="size-5 text-primary" />
-                    ) : item.status === "error" && item.canRetry ? (
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon-sm"
-                        onClick={() => retryItem(item)}
-                        disabled={isUploading}
-                        aria-label={`Retry ${item.fileName}`}
-                      >
-                        <RotateCcw aria-hidden="true" />
-                      </Button>
-                    ) : item.status === "error" || item.status === "selected" ? (
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon-sm"
-                        onClick={() => removeItem(item.localId)}
-                        disabled={isUploading}
-                        aria-label={`Remove ${item.fileName}`}
-                      >
-                        <Trash2 aria-hidden="true" />
-                      </Button>
-                    ) : null}
-                  </div>
-                  <Progress value={item.progress} aria-label={`${item.fileName} progress`} />
-                  {item.error ? (
-                    <p className="text-xs text-destructive">{item.error}</p>
+                <ImagePlus aria-hidden="true" />
+                Choose files
+              </Button>
+              <Input
+                ref={inputRef}
+                className="hidden"
+                type="file"
+                accept="image/jpeg,image/png,image/webp,image/heic,image/heif,video/mp4,video/quicktime,video/webm,.heic,.heif,.mp4,.mov,.webm"
+                multiple
+                onChange={(event) => handleFiles(event.target.files)}
+                aria-label="Choose photos or videos to upload"
+              />
+              {queuedCount > 0 ? (
+                <Button
+                  type="button"
+                  className="w-full sm:w-auto"
+                  onClick={uploadQueuedItems}
+                  disabled={isUploading}
+                >
+                  {isUploading ? (
+                    <LoaderCircle aria-hidden="true" className="animate-spin" />
                   ) : null}
-                </div>
-              </li>
-            ))}
-          </ul>
-        ) : null}
-      </CardContent>
-    </Card>
+                  Upload {queuedCount} {queuedCount === 1 ? "file" : "files"}
+                </Button>
+              ) : null}
+            </div>
+          </div>
+
+          <div
+            aria-atomic="true"
+            aria-live="polite"
+            className="min-h-5 text-sm text-muted-foreground"
+          >
+            {selectionError ? (
+              <p className="flex items-start gap-2 font-medium text-destructive" role="alert">
+                <AlertCircle aria-hidden="true" className="mt-0.5 size-4 shrink-0" />
+                <span>{selectionError}</span>
+              </p>
+            ) : items.length > 0 ? (
+              <p className="flex items-center gap-2">
+                <ShieldCheck aria-hidden="true" className="size-4 text-primary" />
+                {readyCount} of {items.length} files uploaded.
+              </p>
+            ) : (
+              <p>
+                JPEG, PNG, WebP, HEIC, and HEIF images; MP4, MOV, and WebM videos.
+              </p>
+            )}
+          </div>
+
+          {items.length > 0 ? (
+            <ul className="grid gap-3 sm:grid-cols-2" aria-label="Upload queue">
+              {items.map((item) => (
+                <li
+                  key={item.localId}
+                  className={cn(
+                    "flex min-w-0 gap-3 rounded-xl border bg-background p-3",
+                    item.status === "error" && "border-destructive/30 bg-destructive/5",
+                    item.status === "ready" && "border-primary/20 bg-primary/5",
+                  )}
+                >
+                  <div className="relative size-16 shrink-0 overflow-hidden rounded-lg border border-border/80 bg-muted sm:size-20">
+                    {item.previewUrl ? (
+                      <Image
+                        src={item.previewUrl}
+                        alt=""
+                        fill
+                        unoptimized
+                        className="object-cover"
+                      />
+                    ) : item.status !== "ready" && isVideoMimeType(item.mimeType) ? (
+                      <div className="flex size-full items-center justify-center text-primary">
+                        <Video aria-hidden="true" className="size-7" />
+                      </div>
+                    ) : (
+                      <div className="flex size-full items-center justify-center bg-primary/10 text-primary">
+                        <Check aria-hidden="true" className="size-7" />
+                      </div>
+                    )}
+                  </div>
+                  <div className="min-w-0 flex-1 space-y-2">
+                    <div className="flex min-w-0 items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-semibold">{item.fileName}</p>
+                        <p className="mt-0.5 text-xs text-muted-foreground">
+                          {formatBytes(item.fileSize)}
+                        </p>
+                      </div>
+                      <Badge
+                        variant={getStatusBadgeVariant(item.status)}
+                        className="h-5 max-w-full px-2 text-[0.6875rem]"
+                      >
+                        {getStatusLabel(item.status)}
+                      </Badge>
+                    </div>
+                    <Progress
+                      value={item.progress}
+                      aria-label={`${item.fileName} progress`}
+                    />
+                    {item.error ? (
+                      <p className="text-xs leading-5 font-medium text-destructive" role="alert">
+                        {item.error}
+                      </p>
+                    ) : null}
+                    <div className="flex min-h-10 items-center justify-between gap-2">
+                      <p className="text-xs leading-4 text-muted-foreground">
+                        {getStatusDescription(item.status, item.progress)}
+                      </p>
+                      {item.status === "ready" ? (
+                        <Check aria-label="Uploaded" className="size-5 shrink-0 text-primary" />
+                      ) : item.status === "error" && item.canRetry ? (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          className="h-10 shrink-0 px-3"
+                          onClick={() => retryItem(item)}
+                          disabled={isUploading}
+                          aria-label={`Retry ${item.fileName}`}
+                        >
+                          <RotateCcw aria-hidden="true" />
+                          Retry
+                        </Button>
+                      ) : item.status === "error" || item.status === "selected" ? (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          className="h-10 shrink-0 px-3 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                          onClick={() => removeItem(item.localId)}
+                          disabled={isUploading}
+                          aria-label={`Remove ${item.fileName}`}
+                        >
+                          <Trash2 aria-hidden="true" />
+                          Remove
+                        </Button>
+                      ) : null}
+                    </div>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          ) : null}
+        </CardContent>
+      </Card>
+    </section>
   );
 }
 
@@ -754,6 +814,30 @@ function getStatusLabel(status: UploadStatus) {
       return "Uploaded";
     case "error":
       return "Needs attention";
+  }
+}
+
+function getStatusBadgeVariant(status: UploadStatus) {
+  if (status === "error") return "destructive" as const;
+  if (status === "ready") return "default" as const;
+  if (status === "selected") return "outline" as const;
+  return "secondary" as const;
+}
+
+function getStatusDescription(status: UploadStatus, progress: number) {
+  switch (status) {
+    case "selected":
+      return "Ready when you are";
+    case "reserving":
+      return "Preparing a private upload";
+    case "uploading":
+      return `${progress}% uploaded`;
+    case "processing":
+      return "Preparing the gallery copy";
+    case "ready":
+      return "Added to the gallery";
+    case "error":
+      return "Review the message above";
   }
 }
 

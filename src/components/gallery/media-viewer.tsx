@@ -31,9 +31,11 @@ export type GalleryMediaViewerItem = {
 export function GalleryMediaViewer({
   items,
   itemActions,
+  presentation = "default",
 }: {
   items: GalleryMediaViewerItem[];
   itemActions?: ReactNode[];
+  presentation?: "default" | "guest";
 }) {
   const viewerId = useId();
   const dialogRef = useRef<HTMLDialogElement>(null);
@@ -126,7 +128,13 @@ export function GalleryMediaViewer({
 
   return (
     <>
-      <div className="grid grid-cols-2 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      <div
+        className={
+          presentation === "guest"
+            ? "grid grid-cols-2 gap-2.5 sm:grid-cols-2 sm:gap-4 lg:grid-cols-3"
+            : "grid grid-cols-2 gap-4 sm:grid-cols-2 lg:grid-cols-3"
+        }
+      >
         {items.map((media, index) => {
           const nameId = `${viewerId}-${media.id}-name`;
           const detailsId = `${viewerId}-${media.id}-details`;
@@ -134,14 +142,21 @@ export function GalleryMediaViewer({
             <article
               key={media.id}
               aria-labelledby={nameId}
-              className="overflow-hidden rounded-xl border bg-card shadow-xs"
+              className={
+                presentation === "guest"
+                  ? "motion-interactive min-w-0 overflow-hidden rounded-xl border border-primary/15 bg-card shadow-[var(--shadow-paper)] hover:border-primary/30"
+                  : "overflow-hidden rounded-xl border bg-card shadow-xs"
+              }
             >
               <button
                 type="button"
                 aria-describedby={detailsId}
                 aria-haspopup="dialog"
                 aria-label={getOpenViewerActionLabel(media)}
-                className="group block w-full overflow-hidden bg-muted text-left outline-none transition focus-visible:ring-3 focus-visible:ring-ring/50"
+                className={cn(
+                  "group block w-full overflow-hidden bg-muted text-left outline-none transition focus-visible:ring-3 focus-visible:ring-ring/50",
+                  presentation === "guest" && "focus-visible:ring-inset",
+                )}
                 onClick={(event) => openViewer(media.id, event.currentTarget)}
               >
                 {media.mediaKind === "image" ? (
@@ -149,7 +164,12 @@ export function GalleryMediaViewer({
                   <img
                     src={media.thumbnailUrl ?? media.displayUrl}
                     alt=""
-                    className="aspect-square w-full object-cover transition group-hover:scale-[1.01]"
+                    className={cn(
+                      "aspect-square w-full object-cover transition",
+                      presentation === "guest"
+                        ? "group-hover:scale-[1.015]"
+                        : "group-hover:scale-[1.01]",
+                    )}
                     loading="lazy"
                   />
                 ) : (
@@ -160,11 +180,19 @@ export function GalleryMediaViewer({
                       muted
                       playsInline
                       preload="metadata"
-                      className="pointer-events-none size-full object-cover transition group-hover:scale-[1.01]"
+                      className={cn(
+                        "pointer-events-none size-full object-cover transition",
+                        presentation === "guest"
+                          ? "group-hover:scale-[1.015]"
+                          : "group-hover:scale-[1.01]",
+                      )}
                     />
                     <span
                       aria-hidden="true"
-                      className="absolute bottom-2 left-2 flex items-center gap-1.5 rounded-full bg-black/75 px-2.5 py-1 text-xs font-semibold shadow-sm"
+                      className={cn(
+                        "absolute bottom-2 left-2 flex items-center gap-1.5 rounded-full bg-black/75 px-2.5 py-1 text-xs font-semibold shadow-sm",
+                        presentation === "guest" && "border border-white/20",
+                      )}
                     >
                       <Video className="size-3.5" />
                       Video
@@ -172,9 +200,15 @@ export function GalleryMediaViewer({
                   </span>
                 )}
               </button>
-              <div className="space-y-3 p-3">
+              <div className={presentation === "guest" ? "space-y-3 p-2.5 sm:p-4" : "space-y-3 p-3"}>
                 <div>
-                  <p id={nameId} className="truncate font-medium">
+                  <p
+                    id={nameId}
+                    className={cn(
+                      "truncate font-medium",
+                      presentation === "guest" && "text-sm sm:text-base",
+                    )}
+                  >
                     {media.originalFilename}
                   </p>
                   <p id={detailsId} className="mt-1 text-xs text-muted-foreground">
@@ -184,11 +218,28 @@ export function GalleryMediaViewer({
                 <div className="flex flex-wrap gap-2">
                   <a
                     href={media.downloadUrl}
-                    className={buttonVariants({ variant: "outline", size: "sm" })}
+                    className={buttonVariants({
+                      variant: "outline",
+                      size: "sm",
+                      className:
+                        presentation === "guest"
+                          ? "h-10 w-full min-w-0 px-2.5 sm:w-auto"
+                          : undefined,
+                    })}
                     download={media.originalFilename}
                     aria-label={getDownloadViewerActionLabel(media)}
                   >
-                    Download original<span className="sr-only"> {media.originalFilename}</span>
+                    {presentation === "guest" ? (
+                      <>
+                        <Download aria-hidden="true" />
+                        Download
+                        <span className="sr-only"> original {media.originalFilename}</span>
+                      </>
+                    ) : (
+                      <>
+                        Download original<span className="sr-only"> {media.originalFilename}</span>
+                      </>
+                    )}
                   </a>
                   {itemActions?.[index] ?? null}
                 </div>

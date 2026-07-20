@@ -88,6 +88,22 @@ describe("GalleryMediaViewer", () => {
     );
   });
 
+  it("applies the compact keepsake presentation only when requested", () => {
+    const html = renderToStaticMarkup(
+      <GalleryMediaViewer items={[imageItem]} presentation="guest" />,
+    );
+
+    expect(html).toContain(
+      'class="grid grid-cols-2 gap-2.5 sm:grid-cols-2 sm:gap-4 lg:grid-cols-3"',
+    );
+    expect(html).toContain("border-primary/15");
+    expect(html).toContain("sm:p-4");
+    expect(html).toContain(">Download<");
+    expect(html).toContain(getDownloadViewerActionLabel(imageItem));
+    expect(html).toContain('aria-haspopup="dialog"');
+    expect(html).not.toContain("autoplay");
+  });
+
   it("keeps optional owner actions separate from view and download controls", () => {
     const html = renderToStaticMarkup(
       <GalleryMediaViewer

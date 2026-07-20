@@ -37,7 +37,7 @@ export function GuestAccessForm() {
           name="code"
           value={code}
           onChange={(event) => setCode(event.target.value)}
-          placeholder="RENEE-SEBI-<code>"
+          placeholder="RENEE-SEBI-K7M4Q9"
           autoCapitalize="characters"
           autoComplete="off"
           spellCheck={false}
@@ -45,7 +45,7 @@ export function GuestAccessForm() {
           required
           aria-describedby={error ? "gallery-code-error" : "gallery-code-help"}
           aria-invalid={Boolean(error)}
-          className="h-11 font-mono tracking-wide uppercase placeholder:normal-case"
+          className="h-11 font-mono tracking-wide uppercase"
         />
         <p id="gallery-code-help" className="text-sm text-muted-foreground">
           Enter the private code shared by your host.

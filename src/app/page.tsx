@@ -21,35 +21,12 @@ export default async function Home() {
         aria-hidden="true"
         className="pointer-events-none absolute inset-0 -z-10"
       >
-        <svg
-          className="absolute top-28 -right-20 hidden h-44 w-96 text-marigold opacity-90 sm:block lg:top-32 lg:right-0"
-          fill="none"
-          focusable="false"
-          viewBox="0 0 384 176"
-          xmlns="http://www.w3.org/2000/svg"
-        >
-          <path
-            d="M18 134C86 62 180 53 291 74"
-            stroke="currentColor"
-            strokeLinecap="square"
-            strokeWidth="18"
-          />
-          <path d="m285 65 35 13-24 25-28-22 17-16Z" fill="#f0a47b" />
-          <path d="m296 103 24-25 14 31-38-6Z" fill="#c9825f" />
-        </svg>
-
-        <svg
-          className="absolute top-40 left-[7%] size-7 text-apricot sm:top-[45%] sm:left-[3%] sm:size-9"
-          fill="none"
-          focusable="false"
-          viewBox="0 0 40 40"
-          xmlns="http://www.w3.org/2000/svg"
-        >
-          <path d="M20 1c1.5 13.5 5.5 17.5 19 19-13.5 1.5-17.5 5.5-19 19C18.5 25.5 14.5 21.5 1 20 14.5 18.5 18.5 14.5 20 1Z" fill="currentColor" />
-        </svg>
-
-        <span className="absolute top-28 left-[72%] size-2.5 rounded-full bg-evergreen/75 sm:top-[38%] sm:left-[8%]" />
-        <span className="absolute right-[6%] bottom-[18%] size-3 rounded-full bg-marigold sm:right-[12%]" />
+        <span className="homepage-shape homepage-shape-square homepage-texture-checks absolute -top-5 left-[12%] size-16 [--shape-delay:-4s] [--shape-duration:18s] [--shape-rotation:-8deg] sm:top-[17%] sm:left-[2%] sm:size-24" />
+        <span className="homepage-shape homepage-shape-circle homepage-texture-halftone absolute top-24 -right-8 size-24 [--shape-delay:-9s] [--shape-duration:22s] sm:top-[22%] sm:right-[4%] sm:size-32" />
+        <span className="homepage-shape homepage-shape-star homepage-texture-stripes absolute top-[48%] left-[2%] hidden size-14 [--shape-delay:-6s] [--shape-duration:20s] [--shape-rotation:7deg] sm:block lg:left-[4%] lg:size-16" />
+        <span className="homepage-shape homepage-shape-circle homepage-texture-paper absolute bottom-[13%] left-[8%] size-8 [--shape-delay:-12s] [--shape-duration:24s] sm:bottom-[9%] sm:left-[40%] sm:size-11" />
+        <span className="homepage-shape homepage-shape-square homepage-texture-stripes absolute right-[42%] bottom-[3%] size-7 [--shape-delay:-7s] [--shape-duration:19s] [--shape-rotation:12deg] sm:right-[5%] sm:bottom-[8%] sm:size-16" />
+        <span className="homepage-shape homepage-shape-star homepage-texture-paper absolute top-[39%] right-[7%] size-8 [--shape-delay:-2s] [--shape-duration:17s] [--shape-rotation:-5deg] sm:top-[58%] sm:right-[2%] sm:size-10" />
       </div>
 
       <div className="mx-auto flex min-h-dvh w-full max-w-6xl flex-col px-5 py-6 sm:px-10 sm:py-9 lg:px-12">
@@ -95,28 +72,9 @@ export default async function Home() {
             </p>
           </div>
 
-          <div className="motion-entrance relative [--motion-delay:330ms]">
-            <span
-              aria-hidden="true"
-              className="pointer-events-none absolute top-[7.6rem] -left-2 z-10 size-4 rounded-full border border-border bg-paper"
-            />
-            <span
-              aria-hidden="true"
-              className="pointer-events-none absolute top-[7.6rem] -right-2 z-10 size-4 rounded-full border border-border bg-paper"
-            />
-            <svg
-              aria-hidden="true"
-              className="pointer-events-none absolute -top-5 -right-4 z-10 size-10 rotate-6 text-marigold sm:-right-6"
-              fill="none"
-              focusable="false"
-              viewBox="0 0 40 40"
-              xmlns="http://www.w3.org/2000/svg"
-            >
-              <path d="M20 1c1.5 13.5 5.5 17.5 19 19-13.5 1.5-17.5 5.5-19 19C18.5 25.5 14.5 21.5 1 20 14.5 18.5 18.5 14.5 20 1Z" fill="currentColor" />
-            </svg>
-
-            <Card className="motion-interactive motion-lift w-full border-primary/20 py-5 shadow-[0_1px_1px_rgb(34_55_46/0.06),0_26px_60px_-32px_rgb(34_55_46/0.55)] [--card-spacing:--spacing(6)] sm:py-6">
-              <CardHeader className="border-b border-dashed border-border pb-5">
+          <div className="motion-entrance [--motion-delay:330ms]">
+            <Card className="w-full border-primary/15 py-5 shadow-[0_1px_1px_rgb(34_55_46/0.06),0_26px_60px_-32px_rgb(34_55_46/0.45)] [--card-spacing:--spacing(6)] sm:py-6">
+              <CardHeader>
                 <p className="text-xs font-bold tracking-[0.18em] text-primary uppercase">
                   Your invitation
                 </p>

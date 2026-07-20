@@ -130,6 +130,83 @@
   }
 }
 
+@keyframes keepsake-drift {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0) rotate(var(--shape-rotation, 0deg));
+  }
+  50% {
+    transform: translate3d(0.3rem, -0.4rem, 0)
+      rotate(calc(var(--shape-rotation, 0deg) + 1.5deg));
+  }
+}
+
+.homepage-shape {
+  animation: keepsake-drift var(--shape-duration, 20s) ease-in-out infinite;
+  animation-delay: var(--shape-delay, 0s);
+  border: 1px solid rgb(23 76 60 / 0.1);
+}
+
+.homepage-shape-circle {
+  border-radius: 9999px;
+}
+
+.homepage-shape-square {
+  border-radius: 0.75rem;
+}
+
+.homepage-shape-star {
+  border: 0;
+  clip-path: polygon(
+    50% 0%,
+    61% 34%,
+    98% 35%,
+    68% 56%,
+    79% 91%,
+    50% 70%,
+    21% 91%,
+    32% 56%,
+    2% 35%,
+    39% 34%
+  );
+}
+
+.homepage-texture-paper {
+  background-color: rgb(23 76 60 / 0.07);
+  background-image:
+    radial-gradient(circle, rgb(23 76 60 / 0.18) 0 0.6px, transparent 0.8px),
+    radial-gradient(circle, rgb(156 84 47 / 0.12) 0 0.5px, transparent 0.7px);
+  background-position: 0 0, 3px 5px;
+  background-size: 7px 9px, 11px 13px;
+}
+
+.homepage-texture-halftone {
+  background-color: rgb(226 169 39 / 0.04);
+  background-image: radial-gradient(
+    circle,
+    rgb(156 84 47 / 0.2) 0 1px,
+    transparent 1.2px
+  );
+  background-size: 7px 7px;
+}
+
+.homepage-texture-stripes {
+  background-color: rgb(240 164 123 / 0.07);
+  background-image: repeating-linear-gradient(
+    135deg,
+    transparent 0 5px,
+    rgb(201 130 95 / 0.18) 5px 6px
+  );
+}
+
+.homepage-texture-checks {
+  background-color: rgb(226 169 39 / 0.035);
+  background-image:
+    linear-gradient(90deg, rgb(226 169 39 / 0.12) 1px, transparent 1px),
+    linear-gradient(rgb(226 169 39 / 0.12) 1px, transparent 1px);
+  background-size: 9px 9px;
+}
+
 @utility motion-interactive {
   transition-duration: var(--motion-duration-fast);
   transition-property: color, background-color, border-color, box-shadow, opacity,
@@ -142,20 +219,11 @@
   animation-delay: var(--motion-delay, 0ms);
 }
 
-@media (hover: hover) and (pointer: fine) {
-  .motion-lift:hover {
-    transform: translateY(-0.1875rem) rotate(-0.15deg);
-  }
-}
-
 @media (prefers-reduced-motion: reduce) {
   .motion-interactive,
-  .motion-entrance {
+  .motion-entrance,
+  .homepage-shape {
     animation: none !important;
     transition: none !important;
-  }
-
-  .motion-lift:hover {
-    transform: none !important;
   }
 }

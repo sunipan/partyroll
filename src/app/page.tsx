@@ -2,6 +2,7 @@ import { SignInButton } from "@clerk/nextjs";
 import { auth } from "@clerk/nextjs/server";
 import Link from "next/link";
 
+import { PartyrollBrand } from "@/components/brand/partyroll-brand";
 import { GuestAccessForm } from "@/components/guest/guest-access-form";
 import { Button, buttonVariants } from "@/components/ui/button";
 import {
@@ -22,15 +23,9 @@ export default async function Home() {
       >
         <Link
           href="/"
-          className="flex items-center gap-3 rounded-lg outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+          className="rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
         >
-          <span
-            aria-hidden="true"
-            className="flex size-10 items-center justify-center rounded-xl bg-primary text-lg font-semibold text-primary-foreground"
-          >
-            P
-          </span>
-          <span className="text-lg font-semibold tracking-tight">Partyroll</span>
+          <PartyrollBrand />
         </Link>
 
         <nav aria-label="Account">

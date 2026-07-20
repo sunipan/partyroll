@@ -2,14 +2,17 @@
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 
-@custom-variant dark (&:is(.dark *));
-
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
-  --font-heading: var(--font-sans);
+  --font-heading: var(--font-fraunces);
+  --color-paper: var(--brand-paper);
+  --color-ivory: var(--brand-ivory);
+  --color-evergreen: var(--brand-evergreen);
+  --color-apricot: var(--brand-apricot);
+  --color-marigold: var(--brand-marigold);
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -49,39 +52,49 @@
 }
 
 :root {
-  color-scheme: light;
-  --background: #fbf8ef;
-  --foreground: #29332f;
-  --card: #ffffff;
-  --card-foreground: #29332f;
-  --popover: #ffffff;
-  --popover-foreground: #29332f;
-  --primary: #4f7a65;
-  --primary-foreground: #ffffff;
-  --secondary: #dde8d4;
-  --secondary-foreground: #294d3f;
-  --muted: #eef3e9;
-  --muted-foreground: #5f6d66;
-  --accent: #dde8d4;
-  --accent-foreground: #294d3f;
-  --destructive: #b42318;
-  --border: #d7dfd2;
-  --input: #c8d4c5;
-  --ring: #4f7a65;
-  --chart-1: #4f7a65;
-  --chart-2: #6f927f;
-  --chart-3: #8eaa96;
-  --chart-4: #aec2ad;
-  --chart-5: #cedac5;
-  --radius: 0.75rem;
-  --sidebar: #ffffff;
-  --sidebar-foreground: #29332f;
-  --sidebar-primary: #4f7a65;
-  --sidebar-primary-foreground: #ffffff;
-  --sidebar-accent: #dde8d4;
-  --sidebar-accent-foreground: #294d3f;
-  --sidebar-border: #d7dfd2;
-  --sidebar-ring: #4f7a65;
+  color-scheme: only light;
+  --brand-paper: #fbf6ec;
+  --brand-ivory: #fffdf8;
+  --brand-evergreen: #174c3c;
+  --brand-apricot: #f0a47b;
+  --brand-marigold: #e2a927;
+  --background: var(--brand-paper);
+  --foreground: #1b3129;
+  --card: var(--brand-ivory);
+  --card-foreground: #1b3129;
+  --popover: var(--brand-ivory);
+  --popover-foreground: #1b3129;
+  --primary: var(--brand-evergreen);
+  --primary-foreground: #fffaf1;
+  --secondary: #f6d8c5;
+  --secondary-foreground: #432f27;
+  --muted: #eee7db;
+  --muted-foreground: #596861;
+  --accent: #f6e2ad;
+  --accent-foreground: #3f351c;
+  --destructive: #a33e36;
+  --border: #ddd2c0;
+  --input: #8c8273;
+  --ring: #9c542f;
+  --chart-1: var(--brand-evergreen);
+  --chart-2: #4f7868;
+  --chart-3: var(--brand-apricot);
+  --chart-4: var(--brand-marigold);
+  --chart-5: #b96243;
+  --radius: 0.875rem;
+  --shadow-control: 0 1px 1px rgb(34 55 46 / 0.08), 0 5px 14px -10px rgb(34 55 46 / 0.35);
+  --shadow-paper: 0 1px 1px rgb(34 55 46 / 0.06), 0 18px 42px -30px rgb(34 55 46 / 0.42);
+  --motion-duration-fast: 150ms;
+  --motion-duration-base: 240ms;
+  --motion-ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --sidebar: var(--brand-ivory);
+  --sidebar-foreground: #1b3129;
+  --sidebar-primary: var(--brand-evergreen);
+  --sidebar-primary-foreground: #fffaf1;
+  --sidebar-accent: #f6e2ad;
+  --sidebar-accent-foreground: #3f351c;
+  --sidebar-border: #ddd2c0;
+  --sidebar-ring: #9c542f;
 }
 
 @layer base {
@@ -93,5 +106,46 @@
   }
   html {
     @apply font-sans;
+  }
+  h1,
+  h2,
+  h3 {
+    @apply font-heading;
+    font-optical-sizing: auto;
+  }
+  ::selection {
+    background: var(--brand-marigold);
+    color: var(--foreground);
+  }
+}
+
+@keyframes keepsake-enter {
+  from {
+    opacity: 0;
+    transform: translateY(0.5rem);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@utility motion-interactive {
+  transition-duration: var(--motion-duration-fast);
+  transition-property: color, background-color, border-color, box-shadow, opacity,
+    transform;
+  transition-timing-function: var(--motion-ease-out);
+}
+
+@utility motion-entrance {
+  animation: keepsake-enter var(--motion-duration-base) var(--motion-ease-out) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .motion-interactive,
+  .motion-entrance {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
   }
 }

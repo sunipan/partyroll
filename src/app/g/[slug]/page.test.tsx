@@ -1,3 +1,4 @@
+import { Children, isValidElement, type ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -14,6 +15,10 @@ vi.mock("@/lib/uploads/media", () => ({
 
 import { getAuthorizedGuestContext } from "@/lib/guest-access/session";
 import { listReadyMediaForGuestGallery } from "@/lib/uploads/media";
+import {
+  GalleryMediaViewer,
+  type GalleryMediaViewerItem,
+} from "@/components/gallery/media-viewer";
 
 import GuestGalleryPage from "./page";
 
@@ -24,6 +29,7 @@ const gallery = {
   status: "open" as const,
   eventDate: "2026-07-18",
 };
+const thumbnailPlaceholderDataUrl = "data:image/jpeg;base64,/9j/2Q==";
 
 const image = {
   id: "image-1",
@@ -32,10 +38,34 @@ const image = {
   originalUrl: "/g/garden-party/media/image-1/original",
   displayUrl: "/g/garden-party/media/image-1/display",
   thumbnailUrl: "/g/garden-party/media/image-1/thumbnail",
+  thumbnailPlaceholderDataUrl,
   downloadUrl: "/g/garden-party/media/image-1/download",
   originalByteSize: 2_048,
   width: 1200,
   height: 800,
+};
+const legacyImage = {
+  ...image,
+  id: "image-2",
+  originalFilename: "legacy-toast.jpg",
+  originalUrl: "/g/garden-party/media/image-2/original",
+  displayUrl: "/g/garden-party/media/image-2/display",
+  thumbnailUrl: "/g/garden-party/media/image-2/thumbnail",
+  thumbnailPlaceholderDataUrl: null,
+  downloadUrl: "/g/garden-party/media/image-2/download",
+};
+const video = {
+  ...image,
+  id: "video-1",
+  originalFilename: "garden-dance.mp4",
+  mediaKind: "video" as const,
+  originalUrl: "/g/garden-party/media/video-1/video",
+  displayUrl: "/g/garden-party/media/video-1/video",
+  thumbnailUrl: null,
+  thumbnailPlaceholderDataUrl: null,
+  downloadUrl: "/g/garden-party/media/video-1/download",
+  width: null,
+  height: null,
 };
 
 describe("GuestGalleryPage", () => {
@@ -49,15 +79,15 @@ describe("GuestGalleryPage", () => {
       session: { accessVersion: 2 },
     } as never);
     vi.mocked(listReadyMediaForGuestGallery).mockResolvedValue({
-      items: [image],
+      items: [image, legacyImage, video],
       nextCursor: "next-page",
     } as never);
 
-    const html = renderToStaticMarkup(
-      await GuestGalleryPage({
-        params: Promise.resolve({ slug: gallery.slug }),
-      }),
-    );
+    const page = await GuestGalleryPage({
+      params: Promise.resolve({ slug: gallery.slug }),
+    });
+    const html = renderToStaticMarkup(page);
+    const viewerItems = getGalleryMediaViewerItems(page);
 
     expect(html).toContain("Private gallery");
     expect(html).toContain("Open for contributions");
@@ -79,6 +109,18 @@ describe("GuestGalleryPage", () => {
     expect(html).toContain("Next media page");
     expect(html).toContain("next-page");
     expect(html).not.toContain("autoplay");
+    expect(viewerItems.map((item) => item.thumbnailPlaceholderDataUrl)).toEqual([
+      thumbnailPlaceholderDataUrl,
+      null,
+      null,
+    ]);
+    expect(viewerItems[2]).toMatchObject({
+      mediaKind: "video",
+      thumbnailUrl: null,
+      thumbnailPlaceholderDataUrl: null,
+    });
+    expect(viewerItems.every((item) => !("originalObjectKey" in item))).toBe(true);
+    expect(JSON.stringify(viewerItems)).not.toMatch(r2CredentialUrlPattern);
     expect(listReadyMediaForGuestGallery).toHaveBeenCalledWith({
       galleryId: gallery.id,
       slug: gallery.slug,
@@ -150,3 +192,19 @@ describe("GuestGalleryPage", () => {
     });
   });
 });
+
+const r2CredentialUrlPattern =
+  /(?:X-Amz-|AWSAccessKeyId|Signature=|Credential=|r2\.cloudflarestorage\.com)/i;
+
+function getGalleryMediaViewerItems(node: ReactNode): GalleryMediaViewerItem[] {
+  if (!isValidElement(node)) {
+    return [];
+  }
+  if (node.type === GalleryMediaViewer) {
+    return (node.props as { items: GalleryMediaViewerItem[] }).items;
+  }
+
+  return Children.toArray((node.props as { children?: ReactNode }).children).flatMap(
+    getGalleryMediaViewerItems,
+  );
+}

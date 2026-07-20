@@ -47,6 +47,8 @@ import {
   listReadyMediaForOwner,
 } from "./queries";
 
+const thumbnailPlaceholderDataUrl = "data:image/jpeg;base64,/9j/2Q==";
+
 const media = {
   id: randomUUID(),
   galleryId: randomUUID(),
@@ -62,6 +64,7 @@ const media = {
   originalObjectKey: `originals/${randomUUID()}`,
   displayObjectKey: `photos/${randomUUID()}/display.jpg`,
   thumbnailObjectKey: `photos/${randomUUID()}/thumbnail.jpg`,
+  thumbnailPlaceholderDataUrl,
   createdAt: new Date("2026-07-17T12:00:00.000Z"),
   readyAt: new Date("2026-07-17T12:01:00.000Z"),
 } satisfies ReadyMedia;
@@ -113,6 +116,7 @@ describe("ready media delivery and deletion", () => {
         originalUrl: `/g/test-gallery/media/${media.id}/original`,
         displayUrl: `/g/test-gallery/media/${media.id}/display`,
         thumbnailUrl: `/g/test-gallery/media/${media.id}/thumbnail`,
+        thumbnailPlaceholderDataUrl,
         downloadUrl: `/g/test-gallery/media/${media.id}/download`,
       },
     );
@@ -120,6 +124,10 @@ describe("ready media delivery and deletion", () => {
     expect(view).not.toHaveProperty("originalObjectKey");
     expect(view).not.toHaveProperty("displayObjectKey");
     expect(view).not.toHaveProperty("thumbnailObjectKey");
+    expect(JSON.stringify(view)).not.toContain(media.quarantineObjectKey);
+    expect(JSON.stringify(view)).not.toContain(media.originalObjectKey);
+    expect(JSON.stringify(view)).not.toContain(media.displayObjectKey);
+    expect(JSON.stringify(view)).not.toContain(media.thumbnailObjectKey);
 
     expect(listReadyMediaForGuest).toHaveBeenCalledWith({
       galleryId: media.galleryId,
@@ -141,12 +149,85 @@ describe("ready media delivery and deletion", () => {
       originalUrl: `/admin/galleries/${media.galleryId}/media/${media.id}/original`,
       displayUrl: `/admin/galleries/${media.galleryId}/media/${media.id}/display`,
       thumbnailUrl: `/admin/galleries/${media.galleryId}/media/${media.id}/thumbnail`,
+      thumbnailPlaceholderDataUrl,
       downloadUrl: `/admin/galleries/${media.galleryId}/media/${media.id}/download`,
     });
     expect(stableMediaPaths(view)).not.toMatch(r2CredentialUrlPattern);
+    expect(view).not.toHaveProperty("quarantineObjectKey");
+    expect(view).not.toHaveProperty("originalObjectKey");
+    expect(view).not.toHaveProperty("displayObjectKey");
+    expect(view).not.toHaveProperty("thumbnailObjectKey");
     expect(listReadyMediaForOwner).toHaveBeenCalledWith({
       ownerClerkId: "owner-1",
       galleryId: media.galleryId,
+    });
+  });
+
+  it("preserves legacy nulls and pagination while forcing video placeholders to null", async () => {
+    const legacyImage = {
+      ...media,
+      id: randomUUID(),
+      thumbnailPlaceholderDataUrl: null,
+    } satisfies ReadyMedia;
+    const video = {
+      ...media,
+      id: randomUUID(),
+      originalFilename: "first-dance.mp4",
+      declaredMimeType: "video/mp4",
+      mediaKind: "video",
+      mimeType: "video/mp4",
+      displayObjectKey: null,
+      thumbnailObjectKey: null,
+      thumbnailPlaceholderDataUrl,
+      width: null,
+      height: null,
+    } satisfies ReadyMedia;
+    vi.mocked(listReadyMediaForGuest).mockResolvedValueOnce({
+      items: [legacyImage, video],
+      nextCursor: "next-cursor",
+    });
+    vi.mocked(listReadyMediaForOwner).mockResolvedValueOnce({
+      items: [legacyImage, video],
+      nextCursor: "next-cursor",
+    });
+
+    const guestPage = await listReadyMediaForGuestGallery({
+      galleryId: media.galleryId,
+      slug: "test-gallery",
+      accessVersion: 3,
+      cursor: "current-cursor",
+    });
+    const ownerPage = await listReadyMediaForOwnerGallery({
+      ownerClerkId: "owner-1",
+      galleryId: media.galleryId,
+      cursor: "current-cursor",
+    });
+
+    expect(guestPage.nextCursor).toBe("next-cursor");
+    expect(ownerPage.nextCursor).toBe("next-cursor");
+    expect(guestPage.items.map((item) => item.thumbnailPlaceholderDataUrl)).toEqual([
+      null,
+      null,
+    ]);
+    expect(ownerPage.items.map((item) => item.thumbnailPlaceholderDataUrl)).toEqual([
+      null,
+      null,
+    ]);
+    expect(guestPage.items[1]).toMatchObject({
+      mediaKind: "video",
+      thumbnailUrl: null,
+      thumbnailPlaceholderDataUrl: null,
+    });
+    expect(listReadyMediaForGuest).toHaveBeenLastCalledWith({
+      galleryId: media.galleryId,
+      slug: "test-gallery",
+      accessVersion: 3,
+      cursor: "current-cursor",
+    });
+    expect(listReadyMediaForOwner).toHaveBeenLastCalledWith({
+      ownerClerkId: "owner-1",
+      galleryId: media.galleryId,
+      cursor: "current-cursor",
     });
   });
 

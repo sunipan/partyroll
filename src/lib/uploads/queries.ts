@@ -92,6 +92,7 @@ const readyMediaColumns = {
   originalObjectKey: photos.originalObjectKey,
   displayObjectKey: photos.displayObjectKey,
   thumbnailObjectKey: photos.thumbnailObjectKey,
+  thumbnailPlaceholderDataUrl: photos.thumbnailPlaceholderDataUrl,
   createdAt: photos.createdAt,
   readyAt: photos.readyAt,
   cursorCreatedAt: sql<string>`to_char(${photos.createdAt} at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`,
@@ -113,6 +114,7 @@ export type ReadyMedia = Pick<
   | "originalObjectKey"
   | "displayObjectKey"
   | "thumbnailObjectKey"
+  | "thumbnailPlaceholderDataUrl"
   | "createdAt"
   | "readyAt"
 >;
@@ -474,6 +476,7 @@ function stripReadyMediaCursorCreatedAt(row: ReadyMediaRow): ReadyMedia {
     originalObjectKey: row.originalObjectKey,
     displayObjectKey: row.displayObjectKey,
     thumbnailObjectKey: row.thumbnailObjectKey,
+    thumbnailPlaceholderDataUrl: row.thumbnailPlaceholderDataUrl,
     createdAt: row.createdAt,
     readyAt: row.readyAt,
   };

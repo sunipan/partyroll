@@ -28,6 +28,7 @@ type ReadyMediaViewBase = Omit<
   | "originalObjectKey"
   | "displayObjectKey"
   | "thumbnailObjectKey"
+  | "thumbnailPlaceholderDataUrl"
   | "width"
   | "height"
 > & {
@@ -46,12 +47,14 @@ export type ReadyMediaView =
       width: number;
       height: number;
       thumbnailUrl: string;
+      thumbnailPlaceholderDataUrl: string | null;
     })
   | (ReadyMediaViewBase & {
       mediaKind: "video";
       width: null;
       height: null;
       thumbnailUrl: null;
+      thumbnailPlaceholderDataUrl: null;
     });
 
 export type DeleteReadyMediaResult =
@@ -172,6 +175,7 @@ function createReadyMediaView(
       originalUrl: getAssetPath("original"),
       displayUrl: getAssetPath("display"),
       thumbnailUrl: getAssetPath("thumbnail"),
+      thumbnailPlaceholderDataUrl: media.thumbnailPlaceholderDataUrl,
       downloadUrl: getAssetPath("download"),
     };
   }
@@ -192,6 +196,7 @@ function createReadyMediaView(
       originalUrl: getAssetPath("video"),
       displayUrl: getAssetPath(videoAsset.variant),
       thumbnailUrl: null,
+      thumbnailPlaceholderDataUrl: null,
       downloadUrl: getAssetPath("download"),
     };
   }

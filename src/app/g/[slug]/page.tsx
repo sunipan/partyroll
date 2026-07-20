@@ -27,7 +27,10 @@ import {
 } from "@/components/ui/card";
 import { getAuthorizedGuestContext } from "@/lib/guest-access/session";
 import { privateMetadata } from "@/lib/site-metadata";
-import { listReadyMediaForGuestGallery } from "@/lib/uploads/media";
+import {
+  listReadyMediaForGuestGallery,
+  type ReadyMediaView,
+} from "@/lib/uploads/media";
 
 export const metadata: Metadata = {
   ...privateMetadata,
@@ -270,7 +273,7 @@ async function getReadyMediaCursor(
   return "";
 }
 
-function toGalleryMediaViewerItem(media: GalleryMediaViewerItem) {
+function toGalleryMediaViewerItem(media: ReadyMediaView) {
   return {
     id: media.id,
     originalFilename: media.originalFilename,
@@ -278,6 +281,7 @@ function toGalleryMediaViewerItem(media: GalleryMediaViewerItem) {
     originalUrl: media.originalUrl,
     displayUrl: media.displayUrl,
     thumbnailUrl: media.thumbnailUrl,
+    thumbnailPlaceholderDataUrl: media.thumbnailPlaceholderDataUrl,
     downloadUrl: media.downloadUrl,
     originalByteSize: media.originalByteSize,
     width: media.width,

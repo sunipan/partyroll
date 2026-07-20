@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 
+import { Children, isValidElement, type ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -28,11 +29,16 @@ import { requireAdmin } from "@/lib/auth";
 import { getGalleryInvitation } from "@/lib/galleries/invitations";
 import { getGalleryForOwner } from "@/lib/galleries/queries";
 import { listReadyMediaForOwnerGallery } from "@/lib/uploads/media";
+import {
+  GalleryMediaViewer,
+  type GalleryMediaViewerItem,
+} from "@/components/gallery/media-viewer";
 
 import GalleryAdminPage from "./page";
 
 const r2CredentialUrlPattern =
   /(?:X-Amz-|AWSAccessKeyId|Signature=|Credential=|r2\.cloudflarestorage\.com)/i;
+const thumbnailPlaceholderDataUrl = "data:image/jpeg;base64,/9j/2Q==";
 
 describe("GalleryAdminPage media", () => {
   beforeEach(() => {
@@ -77,6 +83,7 @@ describe("GalleryAdminPage media", () => {
           originalUrl: `/admin/galleries/${galleryId}/media/${imageId}/original`,
           displayUrl: `/admin/galleries/${galleryId}/media/${imageId}/display`,
           thumbnailUrl: `/admin/galleries/${galleryId}/media/${imageId}/thumbnail`,
+          thumbnailPlaceholderDataUrl,
           downloadUrl: `/admin/galleries/${galleryId}/media/${imageId}/download`,
         },
         {
@@ -96,15 +103,38 @@ describe("GalleryAdminPage media", () => {
           originalUrl: `/admin/galleries/${galleryId}/media/${videoId}/video`,
           displayUrl: `/admin/galleries/${galleryId}/media/${videoId}/video`,
           thumbnailUrl: null,
+          thumbnailPlaceholderDataUrl: null,
           downloadUrl: `/admin/galleries/${galleryId}/media/${videoId}/download`,
+        },
+        {
+          id: randomUUID(),
+          galleryId,
+          originalFilename: "legacy-toast.jpg",
+          declaredMimeType: "image/jpeg",
+          declaredByteSize: 2_048,
+          mediaKind: "image",
+          mimeType: "image/jpeg",
+          byteSize: 1_024,
+          originalByteSize: 2_048,
+          width: 800,
+          height: 600,
+          createdAt: new Date("2026-07-18T11:00:00.000Z"),
+          readyAt: new Date("2026-07-18T11:01:00.000Z"),
+          originalUrl: `/admin/galleries/${galleryId}/media/legacy-image/original`,
+          displayUrl: `/admin/galleries/${galleryId}/media/legacy-image/display`,
+          thumbnailUrl: `/admin/galleries/${galleryId}/media/legacy-image/thumbnail`,
+          thumbnailPlaceholderDataUrl: null,
+          downloadUrl: `/admin/galleries/${galleryId}/media/legacy-image/download`,
         },
       ],
       nextCursor: "next-cursor",
     });
 
-    const html = renderToStaticMarkup(
-      await GalleryAdminPage({ params: Promise.resolve({ id: galleryId }) }),
-    );
+    const page = await GalleryAdminPage({
+      params: Promise.resolve({ id: galleryId }),
+    });
+    const html = renderToStaticMarkup(page);
+    const viewerItems = getGalleryMediaViewerItems(page);
 
     expect(html).toContain(
       `/admin/galleries/${galleryId}/media/${imageId}/thumbnail`,
@@ -139,6 +169,17 @@ describe("GalleryAdminPage media", () => {
     );
     expect(html).not.toContain("autoplay");
     expect(html).not.toMatch(r2CredentialUrlPattern);
+    expect(viewerItems.map((item) => item.thumbnailPlaceholderDataUrl)).toEqual([
+      thumbnailPlaceholderDataUrl,
+      null,
+      null,
+    ]);
+    expect(viewerItems[1]).toMatchObject({
+      mediaKind: "video",
+      thumbnailUrl: null,
+      thumbnailPlaceholderDataUrl: null,
+    });
+    expect(viewerItems.every((item) => !("originalObjectKey" in item))).toBe(true);
     expect(listReadyMediaForOwnerGallery).toHaveBeenCalledWith({
       ownerClerkId: "owner-1",
       galleryId,
@@ -182,6 +223,7 @@ describe("GalleryAdminPage media", () => {
           originalUrl: `/admin/galleries/${galleryId}/media/${mediaId}/original`,
           displayUrl: `/admin/galleries/${galleryId}/media/${mediaId}/display`,
           thumbnailUrl: `/admin/galleries/${galleryId}/media/${mediaId}/thumbnail`,
+          thumbnailPlaceholderDataUrl: null,
           downloadUrl: `/admin/galleries/${galleryId}/media/${mediaId}/download`,
         },
       ],
@@ -201,3 +243,16 @@ describe("GalleryAdminPage media", () => {
     expect(html).not.toMatch(r2CredentialUrlPattern);
   });
 });
+
+function getGalleryMediaViewerItems(node: ReactNode): GalleryMediaViewerItem[] {
+  if (!isValidElement(node)) {
+    return [];
+  }
+  if (node.type === GalleryMediaViewer) {
+    return (node.props as { items: GalleryMediaViewerItem[] }).items;
+  }
+
+  return Children.toArray((node.props as { children?: ReactNode }).children).flatMap(
+    getGalleryMediaViewerItems,
+  );
+}

@@ -22,6 +22,7 @@ export type GalleryMediaViewerItem = {
   originalUrl: string;
   displayUrl: string;
   thumbnailUrl: string | null;
+  thumbnailPlaceholderDataUrl?: string | null;
   downloadUrl: string;
   originalByteSize: number;
   width: number | null;

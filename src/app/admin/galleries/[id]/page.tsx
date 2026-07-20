@@ -25,7 +25,10 @@ import { requireAdmin } from "@/lib/auth";
 import { getGalleryInvitation } from "@/lib/galleries/invitations";
 import { getGalleryForOwner } from "@/lib/galleries/queries";
 import { galleryIdSchema } from "@/lib/galleries/rules";
-import { listReadyMediaForOwnerGallery } from "@/lib/uploads/media";
+import {
+  listReadyMediaForOwnerGallery,
+  type ReadyMediaView,
+} from "@/lib/uploads/media";
 import { privateMetadata } from "@/lib/site-metadata";
 
 const dateFormatter = new Intl.DateTimeFormat("en", {
@@ -299,7 +302,7 @@ async function getReadyMediaSearchParams(
   };
 }
 
-function toGalleryMediaViewerItem(media: GalleryMediaViewerItem) {
+function toGalleryMediaViewerItem(media: ReadyMediaView) {
   return {
     id: media.id,
     originalFilename: media.originalFilename,
@@ -307,6 +310,7 @@ function toGalleryMediaViewerItem(media: GalleryMediaViewerItem) {
     originalUrl: media.originalUrl,
     displayUrl: media.displayUrl,
     thumbnailUrl: media.thumbnailUrl,
+    thumbnailPlaceholderDataUrl: media.thumbnailPlaceholderDataUrl,
     downloadUrl: media.downloadUrl,
     originalByteSize: media.originalByteSize,
     width: media.width,

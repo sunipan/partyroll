@@ -43,13 +43,18 @@ function photoFixture({
   galleryId,
   status = "ready",
   createdAt,
+  mediaKind = "image",
+  thumbnailPlaceholderDataUrl: placeholderDataUrl = null,
 }: {
   id?: string;
   galleryId: string;
   status?: "ready" | "pending";
   createdAt: Date;
+  mediaKind?: "image" | "video";
+  thumbnailPlaceholderDataUrl?: string | null;
 }) {
   const final = status === "ready";
+  const image = mediaKind === "image";
 
   return {
     id,
@@ -58,17 +63,21 @@ function photoFixture({
     idempotencyKey: randomUUID(),
     uploaderSessionHash: sessionHash,
     quarantineObjectKey: `quarantine/${galleryId}/${id}`,
-    declaredMimeType: "image/jpeg",
-    originalFilename: `${id}.jpg`,
-    mediaKind: "image" as const,
-    originalObjectKey: `assets/${galleryId}/${id}/original.jpg`,
-    displayObjectKey: `assets/${galleryId}/${id}/display.jpg`,
-    thumbnailObjectKey: `assets/${galleryId}/${id}/thumbnail.jpg`,
+    declaredMimeType: image ? "image/jpeg" : "video/mp4",
+    originalFilename: `${id}.${image ? "jpg" : "mp4"}`,
+    mediaKind,
+    originalObjectKey: `assets/${galleryId}/${id}/original.${image ? "jpg" : "mp4"}`,
+    displayObjectKey: image ? `assets/${galleryId}/${id}/display.jpg` : null,
+    thumbnailObjectKey: image
+      ? `assets/${galleryId}/${id}/thumbnail.jpg`
+      : null,
+    thumbnailPlaceholderDataUrl:
+      final && image ? placeholderDataUrl : null,
     declaredByteSize: byteSize,
-    mimeType: final ? "image/jpeg" : null,
+    mimeType: final ? (image ? "image/jpeg" : "video/mp4") : null,
     byteSize: final ? byteSize : null,
-    width: final ? 800 : null,
-    height: final ? 600 : null,
+    width: final && image ? 800 : null,
+    height: final && image ? 600 : null,
     reservationExpiresAt: new Date("2026-07-18T12:30:00.000Z"),
     createdAt,
     readyAt: final ? new Date(createdAt.getTime() + 60_000) : null,
@@ -384,11 +393,13 @@ describe("photo upload reservations", () => {
           id: tieHighId,
           galleryId: pageGallery.id,
           createdAt: new Date("2026-07-18T12:02:00.000Z"),
+          thumbnailPlaceholderDataUrl,
         }),
         photoFixture({
           id: tieLowId,
           galleryId: pageGallery.id,
           createdAt: new Date("2026-07-18T12:02:00.000Z"),
+          mediaKind: "video",
         }),
         photoFixture({
           id: oldestId,
@@ -447,10 +458,25 @@ describe("photo upload reservations", () => {
         newestId,
         tieHighId,
       ]);
+      expect(firstGuestPage.items).toEqual([
+        expect.objectContaining({
+          id: newestId,
+          thumbnailPlaceholderDataUrl: null,
+        }),
+        expect.objectContaining({
+          id: tieHighId,
+          thumbnailPlaceholderDataUrl,
+        }),
+      ]);
       expect(secondGuestPage.items.map((media) => media.id)).toEqual([
         tieLowId,
         oldestId,
       ]);
+      expect(secondGuestPage.items[0]).toMatchObject({
+        id: tieLowId,
+        mediaKind: "video",
+        thumbnailPlaceholderDataUrl: null,
+      });
       expect(secondGuestPage.nextCursor).toBeNull();
       expect(new Set(allGuestIds).size).toBe(allGuestIds.length);
       expect(allGuestIds).toEqual([newestId, tieHighId, tieLowId, oldestId]);
@@ -516,6 +542,21 @@ describe("photo upload reservations", () => {
         ...firstOwnerPage.items.map((media) => media.id),
         ...secondOwnerPage.items.map((media) => media.id),
       ]).toEqual([newestId, tieHighId, tieLowId, oldestId]);
+      expect(firstOwnerPage.items).toEqual([
+        expect.objectContaining({
+          id: newestId,
+          thumbnailPlaceholderDataUrl: null,
+        }),
+        expect.objectContaining({
+          id: tieHighId,
+          thumbnailPlaceholderDataUrl,
+        }),
+      ]);
+      expect(secondOwnerPage.items[0]).toMatchObject({
+        id: tieLowId,
+        mediaKind: "video",
+        thumbnailPlaceholderDataUrl: null,
+      });
       await expect(
         uploadQueries.listReadyMediaForOwner({
           ownerClerkId: owner,

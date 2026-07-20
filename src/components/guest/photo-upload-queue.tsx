@@ -25,6 +25,7 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
+import { formatByteSize } from "@/lib/format-byte-size";
 import {
   getMaxSourceBytesForMediaKind,
   getMediaKindForMimeType,
@@ -71,6 +72,16 @@ type ReservationResponse = {
   status: "pending" | "ready";
   uploadUrl?: string;
 };
+
+export function UploadItemProgress({
+  fileName,
+  status,
+  progress,
+}: Pick<UploadItem, "fileName" | "status" | "progress">) {
+  const value = status === "ready" ? 100 : progress;
+
+  return <Progress value={value} aria-label={`${fileName} progress`} />;
+}
 
 export function PhotoUploadQueue({ slug }: { slug: string }) {
   const router = useRouter();
@@ -565,7 +576,7 @@ export function PhotoUploadQueue({ slug }: { slug: string }) {
                       <div className="min-w-0">
                         <p className="truncate text-sm font-semibold">{item.fileName}</p>
                         <p className="mt-0.5 text-xs text-muted-foreground">
-                          {formatBytes(item.fileSize)}
+                          {formatByteSize(item.fileSize)}
                         </p>
                       </div>
                       <Badge
@@ -575,9 +586,10 @@ export function PhotoUploadQueue({ slug }: { slug: string }) {
                         {getStatusLabel(item.status)}
                       </Badge>
                     </div>
-                    <Progress
-                      value={item.progress}
-                      aria-label={`${item.fileName} progress`}
+                    <UploadItemProgress
+                      fileName={item.fileName}
+                      status={item.status}
+                      progress={item.progress}
                     />
                     {item.error ? (
                       <p className="text-xs leading-5 font-medium text-destructive" role="alert">
@@ -839,14 +851,6 @@ function getStatusDescription(status: UploadStatus, progress: number) {
     case "error":
       return "Review the message above";
   }
-}
-
-function formatBytes(value: number) {
-  return new Intl.NumberFormat("en", {
-    style: "unit",
-    unit: "megabyte",
-    maximumFractionDigits: 1,
-  }).format(value / 1024 / 1024);
 }
 
 function readRetryAfterMilliseconds(response: Response) {

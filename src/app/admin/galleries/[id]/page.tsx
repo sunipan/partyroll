@@ -26,6 +26,7 @@ import { getGalleryInvitation } from "@/lib/galleries/invitations";
 import { getGalleryForOwner } from "@/lib/galleries/queries";
 import { galleryIdSchema } from "@/lib/galleries/rules";
 import { listReadyMediaForOwnerGallery } from "@/lib/uploads/media";
+import { privateMetadata } from "@/lib/site-metadata";
 
 const dateFormatter = new Intl.DateTimeFormat("en", {
   dateStyle: "long",
@@ -37,21 +38,10 @@ type GalleryPageProps = {
   searchParams?: Promise<{ [key: string]: string | string[] | undefined }>;
 };
 
-export async function generateMetadata({
-  params,
-}: GalleryPageProps): Promise<Metadata> {
-  const { id } = await params;
-  const parsedId = galleryIdSchema.safeParse(id);
-
-  if (!parsedId.success) {
-    return { title: "Gallery" };
-  }
-
-  const { userId } = await requireAdmin();
-  const gallery = await getGalleryForOwner(userId, parsedId.data);
-
-  return { title: gallery?.name ?? "Gallery" };
-}
+export const metadata: Metadata = {
+  ...privateMetadata,
+  title: "Manage gallery",
+};
 
 export default async function GalleryAdminPage({
   params,

@@ -1,4 +1,5 @@
 import Link from "next/link";
+import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import {
   Archive,
@@ -25,11 +26,12 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { getAuthorizedGuestContext } from "@/lib/guest-access/session";
+import { privateMetadata } from "@/lib/site-metadata";
 import { listReadyMediaForGuestGallery } from "@/lib/uploads/media";
 
-export const metadata = {
-  title: "Guest gallery | Partyroll",
-  robots: { index: false, follow: false },
+export const metadata: Metadata = {
+  ...privateMetadata,
+  title: "Private gallery",
 };
 
 export default async function GuestGalleryPage({

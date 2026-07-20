@@ -1,7 +1,11 @@
 import { env } from "@/lib/env";
+import {
+  createRootMetadata,
+  viewport as rootViewport,
+} from "@/lib/site-metadata";
 import { ClerkProvider } from "@clerk/nextjs";
 import { Analytics } from "@vercel/analytics/next";
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Fraunces, Geist, Geist_Mono } from "next/font/google";
 
 import "./globals.css";
@@ -22,13 +26,9 @@ const fraunces = Fraunces({
   display: "swap",
 });
 
-export const metadata: Metadata = {
-  title: {
-    default: "Partyroll",
-    template: "%s | Partyroll",
-  },
-  description: "A simple, private place to collect every party photo.",
-};
+export const metadata: Metadata = createRootMetadata(env.APP_URL);
+
+export const viewport: Viewport = rootViewport;
 
 export default function RootLayout({
   children,

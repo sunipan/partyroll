@@ -1,12 +1,14 @@
 import Link from "next/link";
+import type { Metadata } from "next";
 
 import { PartyrollBrand } from "@/components/brand/partyroll-brand";
 import { JoinExchange } from "@/components/guest/join-exchange";
 import { Card, CardContent } from "@/components/ui/card";
+import { privateMetadata } from "@/lib/site-metadata";
 
-export const metadata = {
-  title: "Join gallery | Partyroll",
-  robots: { index: false, follow: false },
+export const metadata: Metadata = {
+  ...privateMetadata,
+  title: "Join a gallery",
 };
 
 export default function JoinPage() {

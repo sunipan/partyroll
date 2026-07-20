@@ -21,6 +21,17 @@ export default async function Home() {
         aria-hidden="true"
         className="pointer-events-none absolute inset-0 -z-10"
       >
+        <svg
+          aria-hidden="true"
+          className="absolute inset-0 size-full fill-apricot opacity-[0.09]"
+          focusable="false"
+          preserveAspectRatio="none"
+          viewBox="0 0 1600 1000"
+          xmlns="http://www.w3.org/2000/svg"
+        >
+          <path d="M0 350C400 300 800 430 1200 470C1370 488 1490 500 1600 515C1470 530 1360 538 1200 530C800 510 420 405 0 350Z" />
+        </svg>
+
         <span className="homepage-shape homepage-shape-square homepage-texture-checks absolute -top-5 left-[12%] size-16 [--shape-delay:-4s] [--shape-duration:18s] [--shape-rotation:-8deg] sm:top-[17%] sm:left-[2%] sm:size-24" />
         <span className="homepage-shape homepage-shape-circle homepage-texture-halftone absolute top-24 -right-8 size-24 [--shape-delay:-9s] [--shape-duration:22s] sm:top-[22%] sm:right-[4%] sm:size-32" />
         <span className="homepage-shape homepage-shape-star homepage-texture-stripes absolute top-[48%] left-[2%] hidden size-14 [--shape-delay:-6s] [--shape-duration:20s] [--shape-rotation:7deg] sm:block lg:left-[4%] lg:size-16" />

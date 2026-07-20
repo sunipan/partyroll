@@ -126,7 +126,7 @@ export function GalleryMediaViewer({
 
   return (
     <>
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      <div className="grid grid-cols-2 gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {items.map((media, index) => {
           const nameId = `${viewerId}-${media.id}-name`;
           const detailsId = `${viewerId}-${media.id}-details`;
@@ -153,9 +153,22 @@ export function GalleryMediaViewer({
                     loading="lazy"
                   />
                 ) : (
-                  <span className="flex aspect-square w-full flex-col items-center justify-center gap-3 bg-black text-white">
-                    <Video aria-hidden="true" className="size-10" />
-                    <span className="text-sm font-medium">Video</span>
+                  <span className="relative block aspect-square w-full overflow-hidden bg-black text-white">
+                    <video
+                      src={getGalleryVideoPreviewSource(media)}
+                      aria-hidden="true"
+                      muted
+                      playsInline
+                      preload="metadata"
+                      className="pointer-events-none size-full object-cover transition group-hover:scale-[1.01]"
+                    />
+                    <span
+                      aria-hidden="true"
+                      className="absolute bottom-2 left-2 flex items-center gap-1.5 rounded-full bg-black/75 px-2.5 py-1 text-xs font-semibold shadow-sm"
+                    >
+                      <Video className="size-3.5" />
+                      Video
+                    </span>
                   </span>
                 )}
               </button>
@@ -303,6 +316,10 @@ export function getDownloadViewerActionLabel(media: GalleryMediaViewerItem) {
 
 export function getViewerMediaSource(media: GalleryMediaViewerItem) {
   return media.mediaKind === "image" ? media.displayUrl : media.originalUrl;
+}
+
+export function getGalleryVideoPreviewSource(media: GalleryMediaViewerItem) {
+  return `${media.displayUrl.split("#", 1)[0]}#t=0.001`;
 }
 
 export function getActiveGalleryMediaItem(

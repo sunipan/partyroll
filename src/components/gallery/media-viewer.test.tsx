@@ -8,6 +8,7 @@ import {
   formatGalleryMediaDetails,
   getActiveGalleryMediaItem,
   getDownloadViewerActionLabel,
+  getGalleryVideoPreviewSource,
   getOpenViewerActionLabel,
   getViewerMediaSource,
   resetViewerVideo,
@@ -34,7 +35,7 @@ const videoItem: GalleryMediaViewerItem = {
   originalFilename: "first-dance.mp4",
   mediaKind: "video",
   originalUrl: "/g/party/media/video-1/video",
-  displayUrl: "/g/party/media/video-1/video",
+  displayUrl: "/g/party/media/video-1/display-video",
   thumbnailUrl: null,
   downloadUrl: "/g/party/media/video-1/download",
   originalByteSize: 3_072,
@@ -62,6 +63,31 @@ describe("GalleryMediaViewer", () => {
     expect(html).not.toContain("autoplay");
   });
 
+  it("renders a paused, muted inline video preview from the protected display URL", () => {
+    const html = renderToStaticMarkup(
+      <GalleryMediaViewer items={[videoItem]} />,
+    );
+
+    expect(html).toContain("<video");
+    expect(html).toContain(`src="${getGalleryVideoPreviewSource(videoItem)}"`);
+    expect(html).toContain('muted=""');
+    expect(html).toContain('playsInline=""');
+    expect(html).toContain('preload="metadata"');
+    expect(html).toContain(">Video</span>");
+    expect(html).not.toContain("autoplay");
+    expect(html).not.toContain("controls");
+  });
+
+  it("uses two mobile and tablet columns while preserving three desktop columns", () => {
+    const html = renderToStaticMarkup(
+      <GalleryMediaViewer items={[imageItem]} />,
+    );
+
+    expect(html).toContain(
+      'class="grid grid-cols-2 gap-4 sm:grid-cols-2 lg:grid-cols-3"',
+    );
+  });
+
   it("keeps optional owner actions separate from view and download controls", () => {
     const html = renderToStaticMarkup(
       <GalleryMediaViewer
@@ -81,7 +107,14 @@ describe("GalleryMediaViewer", () => {
     expect(html).toContain("Download original");
   });
 
-  it("renders dialog labels, close control, image preview, video controls, and download action", () => {
+  it("opens the selected video in the existing controlled viewer without autoplay", () => {
+    const activeVideo = getActiveGalleryMediaItem(
+      [imageItem, videoItem],
+      videoItem.id,
+    );
+    expect(activeVideo).toBe(videoItem);
+    if (!activeVideo) throw new Error("Expected the selected video to be active.");
+
     const imageDialog = renderToStaticMarkup(
       <GalleryMediaDialog
         media={imageItem}
@@ -92,7 +125,7 @@ describe("GalleryMediaViewer", () => {
     );
     const videoDialog = renderToStaticMarkup(
       <GalleryMediaDialog
-        media={videoItem}
+        media={activeVideo}
         titleId="video-title"
         descriptionId="video-description"
         onRequestClose={() => undefined}
@@ -109,12 +142,16 @@ describe("GalleryMediaViewer", () => {
     expect(videoDialog).toContain("<video");
     expect(videoDialog).toContain("controls");
     expect(videoDialog).toContain(videoItem.originalUrl);
+    expect(videoDialog).not.toContain(videoItem.displayUrl);
     expect(videoDialog).not.toContain("autoplay");
   });
 
   it("selects authorized display/video sources and labels", () => {
     expect(getViewerMediaSource(imageItem)).toBe(imageItem.displayUrl);
     expect(getViewerMediaSource(videoItem)).toBe(videoItem.originalUrl);
+    expect(getGalleryVideoPreviewSource(videoItem)).toBe(
+      `${videoItem.displayUrl}#t=0.001`,
+    );
     expect(formatGalleryMediaDetails(imageItem)).toBe("Image · 800×600 · 2 kB");
     expect(formatGalleryMediaDetails(videoItem)).toBe("Video · 3 kB");
   });

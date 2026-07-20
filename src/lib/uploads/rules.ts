@@ -26,7 +26,6 @@ export {
   supportedVideoMimeTypes,
 } from "./client-limits";
 
-export const MAX_DECODED_PIXELS = 40_000_000;
 export const MAX_DISPLAY_DIMENSION = 3000;
 export const MAX_THUMBNAIL_DIMENSION = 720;
 export const MAX_GALLERY_PHOTOS = 10_000;

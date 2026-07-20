@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 vi.mock("server-only", () => ({}));
 
 import { processUploadedImage } from "./image-processing";
+import { MAX_IMAGE_SOURCE_BYTES } from "./rules";
 
 describe("authoritative image processing", () => {
   it("normalizes orientation, strips metadata, and creates controlled JPEG assets", async () => {
@@ -38,6 +39,28 @@ describe("authoritative image processing", () => {
     expect(result.totalByteSize).toBe(
       result.display.byteLength + result.thumbnail.byteLength,
     );
+  });
+
+  it("processes byte-valid images without an additional pixel limit", async () => {
+    const source = await sharp({
+      create: {
+        width: 20_000,
+        height: 14_000,
+        channels: 3,
+        background: { r: 120, g: 180, b: 130 },
+      },
+      limitInputPixels: false,
+    })
+      .jpeg()
+      .toBuffer();
+
+    expect(source.byteLength).toBeLessThanOrEqual(MAX_IMAGE_SOURCE_BYTES);
+
+    const result = await processUploadedImage(source);
+    const metadata = await sharp(result.display).metadata();
+
+    expect(metadata.width).toBe(3000);
+    expect(metadata.height).toBe(2100);
   });
 
   it("rejects malformed and animated input", async () => {

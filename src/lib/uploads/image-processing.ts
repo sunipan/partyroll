@@ -2,11 +2,7 @@ import "server-only";
 
 import sharp from "sharp";
 
-import {
-  MAX_DECODED_PIXELS,
-  MAX_DISPLAY_DIMENSION,
-  MAX_THUMBNAIL_DIMENSION,
-} from "./rules";
+import { MAX_DISPLAY_DIMENSION, MAX_THUMBNAIL_DIMENSION } from "./rules";
 
 const SUPPORTED_FORMATS = new Set(["jpeg", "png", "webp", "heif"]);
 
@@ -34,7 +30,7 @@ export async function processUploadedImage(
 async function processValidatedImage(source: Buffer): Promise<ProcessedPhoto> {
   const metadata = await sharp(source, {
     failOn: "error",
-    limitInputPixels: MAX_DECODED_PIXELS,
+    limitInputPixels: false,
     sequentialRead: true,
   }).metadata();
 
@@ -43,7 +39,6 @@ async function processValidatedImage(source: Buffer): Promise<ProcessedPhoto> {
     !SUPPORTED_FORMATS.has(metadata.format) ||
     !metadata.width ||
     !metadata.height ||
-    metadata.width * metadata.height > MAX_DECODED_PIXELS ||
     (metadata.pages ?? 1) !== 1
   ) {
     throw new InvalidImageError();
@@ -85,7 +80,7 @@ async function processValidatedImage(source: Buffer): Promise<ProcessedPhoto> {
 function createPipeline(source: Buffer) {
   return sharp(source, {
     failOn: "error",
-    limitInputPixels: MAX_DECODED_PIXELS,
+    limitInputPixels: false,
     sequentialRead: true,
   }).rotate();
 }

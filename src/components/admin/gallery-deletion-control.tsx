@@ -54,7 +54,7 @@ export function GalleryDeletionControl({
 
   if (!confirmationOpen) {
     return (
-      <div className="space-y-2" aria-live="polite">
+      <div className="ml-auto space-y-2" aria-live="polite">
         {confirmationFailed ? (
           <p role="alert" className="text-sm text-destructive">
             Type the exact gallery name to confirm deletion.
@@ -65,7 +65,7 @@ export function GalleryDeletionControl({
           type="button"
           className={cn(
             buttonVariants({ variant: "destructive", size: "sm" }),
-            "border border-destructive/25",
+            "min-h-8 border-transparent bg-transparent px-2 text-muted-foreground hover:border-destructive/20 hover:bg-destructive/10 hover:text-destructive",
           )}
           aria-label={`Delete gallery ${galleryName}`}
           aria-haspopup="true"
@@ -128,7 +128,7 @@ export function GalleryDeleteConfirmation({
       role="group"
       aria-labelledby={titleId}
       aria-describedby={descriptionId}
-      className="w-full space-y-3 rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm"
+      className="min-w-0 basis-full space-y-3 rounded-xl border border-destructive/25 bg-card p-3 text-sm shadow-[var(--shadow-control)]"
       onKeyDown={(event) => {
         if (event.key === "Escape") {
           event.preventDefault();
@@ -137,10 +137,10 @@ export function GalleryDeleteConfirmation({
       }}
     >
       <div>
-        <p id={titleId} className="font-semibold text-destructive">
+        <p id={titleId} className="break-words font-semibold text-destructive">
           Delete {galleryName}?
         </p>
-        <p id={descriptionId} className="mt-1 text-muted-foreground">
+        <p id={descriptionId} className="mt-1 text-xs leading-5 text-muted-foreground sm:text-sm">
           Guest access ends immediately. Deletion is permanent and removes this
           gallery and its uploaded media.
         </p>
@@ -157,7 +157,7 @@ export function GalleryDeleteConfirmation({
       >
         <input type="hidden" name="galleryId" value={galleryId} />
         <div className="space-y-1.5">
-          <label htmlFor={inputId} className="font-medium">
+          <label htmlFor={inputId} className="block break-words font-medium">
             Type {galleryName} to confirm
           </label>
           <input
@@ -180,7 +180,7 @@ export function GalleryDeleteConfirmation({
             </p>
           ) : null}
         </div>
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap-reverse gap-2 sm:flex-wrap">
           <GalleryDeleteSubmitButton
             disabled={!matches}
             pendingLabel={`Deleting ${galleryName}…`}
@@ -213,7 +213,7 @@ function GalleryDeletionRetryForm({
   const descriptionId = useId();
 
   return (
-    <form action={deleteGalleryAction} className="w-full space-y-2">
+    <form action={deleteGalleryAction} className="min-w-0 basis-full space-y-2">
       <input type="hidden" name="galleryId" value={galleryId} />
       <input type="hidden" name="confirmationName" value={galleryName} />
       {deletionFailed ? (

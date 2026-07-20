@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { Plus } from "lucide-react";
 import Link from "next/link";
 
 import { AdminHeader } from "@/components/admin/admin-header";
@@ -8,6 +9,7 @@ import { buttonVariants } from "@/components/ui/button";
 import {
   Card,
   CardAction,
+  CardContent,
   CardDescription,
   CardFooter,
   CardHeader,
@@ -37,48 +39,74 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
   const galleries = await listGalleriesForOwner(userId);
 
   return (
-    <main className="mx-auto flex min-h-dvh w-full max-w-5xl flex-col px-6 py-8 sm:px-10 sm:py-10">
+    <main className="mx-auto flex min-h-dvh w-full max-w-5xl flex-col px-5 py-6 sm:px-10 sm:py-9">
       <AdminHeader />
 
-      <section className="py-12 sm:py-16" aria-labelledby="dashboard-title">
-        <div className="flex flex-col gap-6 sm:flex-row sm:items-end sm:justify-between">
-          <div>
-            <p className="text-sm font-semibold tracking-widest text-primary uppercase">
+      <section className="py-9 sm:py-12" aria-labelledby="dashboard-title">
+        <div className="flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
+          <div className="min-w-0">
+            <p className="flex items-center gap-2 text-xs font-bold tracking-[0.18em] text-primary uppercase">
+              <span aria-hidden="true" className="h-px w-6 bg-marigold" />
               Administrator
             </p>
             <h1
               id="dashboard-title"
-              className="mt-3 text-3xl font-semibold tracking-tight sm:text-4xl"
+              className="mt-2 text-3xl leading-tight font-semibold tracking-[-0.025em] sm:text-4xl"
             >
               Your galleries
             </h1>
-            <p className="mt-3 max-w-xl leading-7 text-muted-foreground">
+            <p className="mt-2 max-w-xl text-sm leading-6 text-muted-foreground sm:text-base">
               Create a private gallery, then share its code or QR invitation
               with your guests.
             </p>
           </div>
-          <Link href="/admin/galleries/new" className={buttonVariants({ size: "lg" })}>
+          <Link href="/admin/galleries/new" className={buttonVariants()}>
+            <Plus aria-hidden="true" />
             Create gallery
           </Link>
         </div>
 
         {galleries.length === 0 ? (
-          <Card className="mt-10 border-dashed bg-card/70 text-center shadow-none">
-            <CardHeader className="py-10">
-              <CardTitle>No galleries yet</CardTitle>
+          <Card className="mt-8 border-dashed border-primary/25 bg-card/70 text-center shadow-none sm:mt-9">
+            <CardHeader className="pt-5">
+              <span
+                aria-hidden="true"
+                className="mx-auto mb-1 flex size-9 items-center justify-center rounded-full bg-accent text-accent-foreground"
+              >
+                <Plus className="size-4" />
+              </span>
+              <CardTitle>
+                <h2 className="text-lg">No galleries yet</h2>
+              </CardTitle>
               <CardDescription className="mx-auto max-w-md leading-6">
                 Create your first gallery to generate a private guest code and
                 QR invitation.
               </CardDescription>
             </CardHeader>
+            <CardContent className="pb-2">
+              <Link
+                href="/admin/galleries/new"
+                className={buttonVariants({ variant: "outline", size: "sm" })}
+              >
+                Create your first gallery
+              </Link>
+            </CardContent>
           </Card>
         ) : (
-          <div className="mt-10 grid gap-5 sm:grid-cols-2">
+          <div className="mt-8 grid gap-4 sm:mt-9 sm:grid-cols-2">
             {galleries.map((gallery) => (
-              <Card key={gallery.id} className="bg-card shadow-xs">
+              <Card
+                key={gallery.id}
+                size="sm"
+                className="border-primary/10 bg-card shadow-[var(--shadow-control)]"
+              >
                 <CardHeader>
-                  <CardTitle className="text-lg">{gallery.name}</CardTitle>
-                  <CardDescription>
+                  <CardTitle className="min-w-0 pr-2">
+                    <h2 className="min-w-0 truncate text-lg" title={gallery.name}>
+                      {gallery.name}
+                    </h2>
+                  </CardTitle>
+                  <CardDescription className="text-xs leading-5">
                     {gallery.eventDate
                       ? dateFormatter.format(new Date(`${gallery.eventDate}T00:00:00Z`))
                       : "No event date"}
@@ -87,7 +115,7 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
                     <GalleryStatusBadge status={gallery.status} />
                   </CardAction>
                 </CardHeader>
-                <CardFooter className="flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <CardFooter className="flex flex-wrap items-start justify-between gap-3 bg-muted/40">
                   <Link
                     href={`/admin/galleries/${gallery.id}`}
                     className={buttonVariants({ variant: "outline", size: "sm" })}

@@ -748,6 +748,7 @@ export async function markPhotoReady({
   mimeType,
   width,
   height,
+  thumbnailPlaceholderDataUrl,
   now = new Date(),
 }: {
   photoId: string;
@@ -757,6 +758,7 @@ export async function markPhotoReady({
   mimeType: string;
   width?: number | null;
   height?: number | null;
+  thumbnailPlaceholderDataUrl: string | null;
   now?: Date;
 }): Promise<MarkPhotoReadyResult> {
   try {
@@ -769,6 +771,7 @@ export async function markPhotoReady({
           byteSize: finalByteSize,
           width: width ?? null,
           height: height ?? null,
+          thumbnailPlaceholderDataUrl,
           readyAt: now,
           processingStartedAt: null,
           nextProcessingAttemptAt: null,

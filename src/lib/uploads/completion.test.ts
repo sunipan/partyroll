@@ -94,6 +94,7 @@ import {
 
 const processingStartedAt = new Date("2026-07-16T12:00:00.000Z");
 const renewedAt = new Date("2026-07-16T12:00:01.000Z");
+const thumbnailPlaceholderDataUrl = "data:image/jpeg;base64,/9j/2Q==";
 const photo = {
   id: randomUUID(),
   galleryId: randomUUID(),
@@ -106,6 +107,7 @@ const photo = {
   originalObjectKey: `originals/${randomUUID()}`,
   displayObjectKey: `photos/${randomUUID()}/display.jpg`,
   thumbnailObjectKey: `photos/${randomUUID()}/thumbnail.jpg`,
+  thumbnailPlaceholderDataUrl: null,
   declaredMimeType: "image/jpeg",
   mediaKind: "image",
   declaredByteSize: 1024,
@@ -140,6 +142,7 @@ describe("photo completion lease safety", () => {
     vi.mocked(processUploadedImage).mockResolvedValue({
       display: Buffer.from("display"),
       thumbnail: Buffer.from("thumbnail"),
+      thumbnailPlaceholderDataUrl,
       totalByteSize: 16,
       width: 800,
       height: 600,
@@ -179,6 +182,16 @@ describe("photo completion lease safety", () => {
       byteSize: photo.declaredByteSize,
     });
     expect(putProcessedObject).toHaveBeenCalledTimes(2);
+    expect(markPhotoReady).toHaveBeenCalledWith({
+      photoId: photo.id,
+      galleryId: photo.galleryId,
+      processingStartedAt: renewedAt,
+      finalByteSize: photo.declaredByteSize + 16,
+      mimeType: "image/jpeg",
+      width: 800,
+      height: 600,
+      thumbnailPlaceholderDataUrl,
+    });
     expect(deleteUploadObjects).not.toHaveBeenCalled();
   });
 
@@ -395,6 +408,7 @@ describe("photo completion lease safety", () => {
       processingStartedAt: renewedAt,
       finalByteSize: videoPhoto.declaredByteSize,
       mimeType: "video/mp4",
+      thumbnailPlaceholderDataUrl: null,
     });
   });
 });

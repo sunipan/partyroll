@@ -4,7 +4,13 @@ import { describe, expect, it, vi } from "vitest";
 vi.mock("server-only", () => ({}));
 
 import { processUploadedImage } from "./image-processing";
-import { MAX_IMAGE_SOURCE_BYTES } from "./rules";
+import {
+  MAX_IMAGE_SOURCE_BYTES,
+  MAX_THUMBNAIL_PLACEHOLDER_DATA_URL_LENGTH,
+  THUMBNAIL_PLACEHOLDER_DIMENSION,
+} from "./rules";
+
+const JPEG_DATA_URL_PREFIX = "data:image/jpeg;base64,";
 
 describe("authoritative image processing", () => {
   it("normalizes orientation, strips metadata, and creates controlled JPEG assets", async () => {
@@ -21,21 +27,42 @@ describe("authoritative image processing", () => {
       .toBuffer();
 
     const result = await processUploadedImage(source);
-    const [displayMetadata, thumbnailMetadata] = await Promise.all([
-      sharp(result.display).metadata(),
-      sharp(result.thumbnail).metadata(),
-    ]);
+    expect(result.thumbnailPlaceholderDataUrl).toMatch(
+      /^data:image\/jpeg;base64,[A-Za-z0-9+/]+={0,2}$/,
+    );
+    expect(result.thumbnailPlaceholderDataUrl.length).toBeLessThanOrEqual(
+      MAX_THUMBNAIL_PLACEHOLDER_DATA_URL_LENGTH,
+    );
+    const placeholder = Buffer.from(
+      result.thumbnailPlaceholderDataUrl.slice(JPEG_DATA_URL_PREFIX.length),
+      "base64",
+    );
+    const [displayMetadata, thumbnailMetadata, placeholderMetadata] =
+      await Promise.all([
+        sharp(result.display).metadata(),
+        sharp(result.thumbnail).metadata(),
+        sharp(placeholder).metadata(),
+      ]);
 
     expect(displayMetadata.format).toBe("jpeg");
     expect(thumbnailMetadata.format).toBe("jpeg");
+    expect(placeholderMetadata.format).toBe("jpeg");
     expect(Math.max(displayMetadata.width!, displayMetadata.height!)).toBeLessThanOrEqual(
       3000,
     );
     expect(
       Math.max(thumbnailMetadata.width!, thumbnailMetadata.height!),
-    ).toBeLessThanOrEqual(720);
+    ).toBeLessThanOrEqual(640);
+    expect(thumbnailMetadata.isProgressive).toBe(true);
+    expect(
+      Math.max(placeholderMetadata.width!, placeholderMetadata.height!),
+    ).toBe(THUMBNAIL_PLACEHOLDER_DIMENSION);
     expect(displayMetadata.exif).toBeUndefined();
     expect(displayMetadata.orientation).toBeUndefined();
+    expect(thumbnailMetadata.exif).toBeUndefined();
+    expect(thumbnailMetadata.orientation).toBeUndefined();
+    expect(placeholderMetadata.exif).toBeUndefined();
+    expect(placeholderMetadata.orientation).toBeUndefined();
     expect(result.totalByteSize).toBe(
       result.display.byteLength + result.thumbnail.byteLength,
     );

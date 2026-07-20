@@ -68,6 +68,7 @@ const media = {
 
 const claimedMedia = {
   ...media,
+  thumbnailPlaceholderDataUrl: null,
   status: "ready",
   idempotencyKey: randomUUID(),
   uploaderSessionHash: "a".repeat(64),

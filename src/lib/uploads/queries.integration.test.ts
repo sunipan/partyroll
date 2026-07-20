@@ -11,6 +11,7 @@ const owner = `partyroll-upload-test-${randomUUID()}`;
 const sessionHash = "a".repeat(64);
 const otherSessionHash = "b".repeat(64);
 const byteSize = 2048;
+const thumbnailPlaceholderDataUrl = "data:image/jpeg;base64,/9j/2Q==";
 
 let db: (typeof import("@/db"))["db"];
 let galleries: (typeof import("@/db/schema"))["galleries"];
@@ -162,6 +163,9 @@ describe("photo upload reservations", () => {
       .where(eq(galleries.id, openGalleryId));
     expect(gallery.reservedPhotoCount).toBe(1);
     expect(gallery.reservedBytes).toBe(byteSize);
+    if (first.outcome === "reserved") {
+      expect(first.photo.thumbnailPlaceholderDataUrl).toBeNull();
+    }
   });
 
   it("rejects conflicting retries, closed galleries, and cross-session reads", async () => {
@@ -231,6 +235,7 @@ describe("photo upload reservations", () => {
       mimeType: "image/jpeg",
       width: 800,
       height: 600,
+      thumbnailPlaceholderDataUrl,
     });
     expect(ready).toMatchObject({
       outcome: "ready",
@@ -246,6 +251,7 @@ describe("photo upload reservations", () => {
         mimeType: "image/jpeg",
         width: 800,
         height: 600,
+        thumbnailPlaceholderDataUrl,
       }),
     ).resolves.toEqual({ outcome: "state-changed" });
 
@@ -257,6 +263,17 @@ describe("photo upload reservations", () => {
     expect(gallery.reservedPhotoCount).toBe(0);
     expect(gallery.storageBytes).toBe(1024 + byteSize);
     expect(gallery.reservedBytes).toBe(0);
+    const [persistedPhoto] = await db
+      .select({
+        status: photos.status,
+        thumbnailPlaceholderDataUrl: photos.thumbnailPlaceholderDataUrl,
+      })
+      .from(photos)
+      .where(eq(photos.id, photo.id));
+    expect(persistedPhoto).toEqual({
+      status: "ready",
+      thumbnailPlaceholderDataUrl,
+    });
   });
 
   it("lists ready media only for the scoped guest session or owner", async () => {
@@ -400,6 +417,13 @@ describe("photo upload reservations", () => {
           createdAt: new Date("2026-07-18T12:07:00.000Z"),
         }),
       ]);
+      const [legacyReadyPhoto] = await db
+        .select({
+          thumbnailPlaceholderDataUrl: photos.thumbnailPlaceholderDataUrl,
+        })
+        .from(photos)
+        .where(eq(photos.id, newestId));
+      expect(legacyReadyPhoto.thumbnailPlaceholderDataUrl).toBeNull();
 
       const firstGuestPage = await uploadQueries.listReadyMediaForGuest({
         galleryId: pageGallery.id,
@@ -599,6 +623,32 @@ describe("photo upload reservations", () => {
             mimeType: "image/jpeg",
             width: 800,
             height: 600,
+            thumbnailPlaceholderDataUrl:
+              "data:image/jpeg;base64," + "A".repeat(2048),
+          }),
+        ).rejects.toThrow();
+        const [unchangedPhoto] = await db
+          .select({
+            status: photos.status,
+            thumbnailPlaceholderDataUrl: photos.thumbnailPlaceholderDataUrl,
+          })
+          .from(photos)
+          .where(eq(photos.id, firstReservation.photo.id));
+        expect(unchangedPhoto).toEqual({
+          status: "processing",
+          thumbnailPlaceholderDataUrl: null,
+        });
+
+        await expect(
+          uploadQueries.markPhotoReady({
+            photoId: firstReservation.photo.id,
+            galleryId: lifecycleGallery.id,
+            processingStartedAt: firstClaim!.processingStartedAt!,
+            finalByteSize: 1024 + byteSize,
+            mimeType: "image/jpeg",
+            width: 800,
+            height: 600,
+            thumbnailPlaceholderDataUrl,
           }),
         ).resolves.toMatchObject({ outcome: "ready" });
 
@@ -616,11 +666,15 @@ describe("photo upload reservations", () => {
             mimeType: "image/jpeg",
             width: 800,
             height: 600,
+            thumbnailPlaceholderDataUrl,
           }),
         ).resolves.toEqual({ outcome: "unavailable" });
 
         const [blockedPhoto] = await db
-          .select({ status: photos.status })
+          .select({
+            status: photos.status,
+            thumbnailPlaceholderDataUrl: photos.thumbnailPlaceholderDataUrl,
+          })
           .from(photos)
           .where(eq(photos.id, secondReservation.photo.id));
         const [updatedGallery] = await db
@@ -631,7 +685,10 @@ describe("photo upload reservations", () => {
           .from(galleries)
           .where(eq(galleries.id, lifecycleGallery.id));
 
-        expect(blockedPhoto.status).toBe("processing");
+        expect(blockedPhoto).toEqual({
+          status: "processing",
+          thumbnailPlaceholderDataUrl: null,
+        });
         expect(updatedGallery).toEqual({
           photoCount: 1,
           reservedPhotoCount: 1,
@@ -642,6 +699,65 @@ describe("photo upload reservations", () => {
     },
     15_000,
   );
+
+  it("keeps video placeholders null through finalization", async () => {
+    const gallery = await galleryQueries.createGalleryForOwner(owner, {
+      name: `Video Placeholder ${randomUUID()}`,
+      eventDate: undefined,
+    });
+
+    try {
+      const reservation = await uploadQueries.reservePhotoUpload({
+        galleryId: gallery.id,
+        accessVersion: gallery.accessVersion,
+        uploaderSessionHash: sessionHash,
+        input: {
+          slug: gallery.slug,
+          idempotencyKey: randomUUID(),
+          mimeType: "video/mp4",
+          byteSize,
+          originalFilename: "first-dance.mp4",
+        },
+        ...createReservationIdentity(),
+      });
+      expect(reservation.outcome).toBe("reserved");
+      if (reservation.outcome !== "reserved") {
+        throw new Error("Video reservation was not created.");
+      }
+      expect(reservation.photo.thumbnailPlaceholderDataUrl).toBeNull();
+
+      const claimed = await uploadQueries.claimPhotoForProcessing({
+        photoId: reservation.photo.id,
+        galleryId: gallery.id,
+        uploaderSessionHash: sessionHash,
+      });
+      expect(claimed?.processingStartedAt).toBeInstanceOf(Date);
+
+      const ready = await uploadQueries.markPhotoReady({
+        photoId: reservation.photo.id,
+        galleryId: gallery.id,
+        processingStartedAt: claimed!.processingStartedAt!,
+        finalByteSize: byteSize,
+        mimeType: "video/mp4",
+        thumbnailPlaceholderDataUrl: null,
+      });
+      expect(ready).toMatchObject({
+        outcome: "ready",
+        photo: {
+          mediaKind: "video",
+          thumbnailPlaceholderDataUrl: null,
+        },
+      });
+
+      const [updatedGallery] = await db
+        .select({ storageBytes: galleries.storageBytes })
+        .from(galleries)
+        .where(eq(galleries.id, gallery.id));
+      expect(updatedGallery.storageBytes).toBe(byteSize);
+    } finally {
+      await db.delete(galleries).where(eq(galleries.id, gallery.id));
+    }
+  });
 
   it(
     "denies new reservations and finalization once a gallery is deleting",
@@ -740,6 +856,7 @@ describe("photo upload reservations", () => {
             mimeType: "image/jpeg",
             width: 800,
             height: 600,
+            thumbnailPlaceholderDataUrl,
           }),
         ).resolves.toEqual({ outcome: "unavailable" });
       } finally {
@@ -805,6 +922,7 @@ describe("photo upload reservations", () => {
             mimeType: "image/jpeg",
             width: 800,
             height: 600,
+            thumbnailPlaceholderDataUrl,
           }),
         ).resolves.toEqual({ outcome: "state-changed" });
 

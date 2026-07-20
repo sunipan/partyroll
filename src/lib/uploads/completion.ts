@@ -168,6 +168,7 @@ export async function completePhotoUpload({
       mimeType: string;
       width?: number | null;
       height?: number | null;
+      thumbnailPlaceholderDataUrl: string | null;
     };
 
     if (mediaKind === "image") {
@@ -249,6 +250,7 @@ export async function completePhotoUpload({
         mimeType: photo.declaredMimeType,
         width: processed.width,
         height: processed.height,
+        thumbnailPlaceholderDataUrl: processed.thumbnailPlaceholderDataUrl,
       };
     } else if (mediaKind === "video") {
       if (!isSupportedVideoMimeType(photo.declaredMimeType)) {
@@ -257,6 +259,7 @@ export async function completePhotoUpload({
       if (
         photo.displayObjectKey !== null ||
         photo.thumbnailObjectKey !== null ||
+        photo.thumbnailPlaceholderDataUrl !== null ||
         photo.width !== null ||
         photo.height !== null
       ) {
@@ -305,6 +308,7 @@ export async function completePhotoUpload({
       readyInput = {
         finalByteSize: photo.declaredByteSize,
         mimeType: photo.declaredMimeType,
+        thumbnailPlaceholderDataUrl: null,
       };
     } else {
       throw new InvalidUploadError("The upload type is unsupported.");

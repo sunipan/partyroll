@@ -10,6 +10,7 @@ import {
   timestamp,
   uniqueIndex,
   uuid,
+  varchar,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 
@@ -104,6 +105,9 @@ export const photos = pgTable(
     originalObjectKey: text("original_object_key").notNull(),
     displayObjectKey: text("display_object_key"),
     thumbnailObjectKey: text("thumbnail_object_key"),
+    thumbnailPlaceholderDataUrl: varchar("thumbnail_placeholder_data_url", {
+      length: 2048,
+    }),
     declaredByteSize: integer("declared_byte_size").notNull(),
     mimeType: text("mime_type"),
     byteSize: integer("byte_size"),
@@ -150,7 +154,7 @@ export const photos = pgTable(
     ),
     check(
       "photos_video_original_only",
-      sql`(${table.mediaKind} <> 'video') or (${table.displayObjectKey} is null and ${table.thumbnailObjectKey} is null and ${table.width} is null and ${table.height} is null)`,
+      sql`(${table.mediaKind} <> 'video') or (${table.displayObjectKey} is null and ${table.thumbnailObjectKey} is null and ${table.thumbnailPlaceholderDataUrl} is null and ${table.width} is null and ${table.height} is null)`,
     ),
     check(
       "photos_original_object_key_not_blank",
@@ -173,6 +177,10 @@ export const photos = pgTable(
       sql`${table.thumbnailObjectKey} is null or length(btrim(${table.thumbnailObjectKey})) > 0`,
     ),
     check(
+      "photos_thumbnail_placeholder_data_url_valid",
+      sql`${table.thumbnailPlaceholderDataUrl} is null or (left(${table.thumbnailPlaceholderDataUrl}, 23) = 'data:image/jpeg' || chr(59) || 'base64,' and substring(${table.thumbnailPlaceholderDataUrl} from 24) ~ '^[A-Za-z0-9+/]+={0,2}$' and mod(length(${table.thumbnailPlaceholderDataUrl}) - 23, 4) = 0)`,
+    ),
+    check(
       "photos_quarantine_object_key_not_blank",
       sql`length(btrim(${table.quarantineObjectKey})) > 0`,
     ),
@@ -186,7 +194,7 @@ export const photos = pgTable(
     ),
     check(
       "photos_non_ready_final_metadata_absent",
-      sql`(${table.status}::text = 'ready') or (${table.readyAt} is null and ${table.mimeType} is null and ${table.byteSize} is null and ${table.width} is null and ${table.height} is null)`,
+      sql`(${table.status}::text = 'ready') or (${table.readyAt} is null and ${table.mimeType} is null and ${table.byteSize} is null and ${table.width} is null and ${table.height} is null and ${table.thumbnailPlaceholderDataUrl} is null)`,
     ),
     check(
       "photos_final_mime_type_matches_media_kind",

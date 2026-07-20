@@ -2,13 +2,20 @@ import "server-only";
 
 import sharp from "sharp";
 
-import { MAX_DISPLAY_DIMENSION, MAX_THUMBNAIL_DIMENSION } from "./rules";
+import {
+  MAX_DISPLAY_DIMENSION,
+  MAX_THUMBNAIL_DIMENSION,
+  MAX_THUMBNAIL_PLACEHOLDER_DATA_URL_LENGTH,
+  THUMBNAIL_PLACEHOLDER_DIMENSION,
+} from "./rules";
 
 const SUPPORTED_FORMATS = new Set(["jpeg", "png", "webp", "heif"]);
+const JPEG_DATA_URL_PREFIX = "data:image/jpeg;base64,";
 
 export type ProcessedPhoto = {
   display: Buffer;
   thumbnail: Buffer;
+  thumbnailPlaceholderDataUrl: string;
   width: number;
   height: number;
   totalByteSize: number;
@@ -61,16 +68,39 @@ async function processValidatedImage(source: Buffer): Promise<ProcessedPhoto> {
       fit: "inside",
       withoutEnlargement: true,
     })
-    .jpeg({ quality: 78, progressive: true })
+    .jpeg({ quality: 72, progressive: true })
     .toBuffer();
 
-  if (!displayResult.info.width || !displayResult.info.height) {
+  const thumbnailPlaceholder = await createPipeline(source)
+    .resize({
+      width: THUMBNAIL_PLACEHOLDER_DIMENSION,
+      height: THUMBNAIL_PLACEHOLDER_DIMENSION,
+      fit: "inside",
+    })
+    .blur(1)
+    .jpeg({
+      quality: 40,
+      progressive: false,
+      chromaSubsampling: "4:2:0",
+      optimiseCoding: true,
+    })
+    .toBuffer();
+  const thumbnailPlaceholderDataUrl =
+    JPEG_DATA_URL_PREFIX + thumbnailPlaceholder.toString("base64");
+
+  if (
+    !displayResult.info.width ||
+    !displayResult.info.height ||
+    thumbnailPlaceholderDataUrl.length >
+      MAX_THUMBNAIL_PLACEHOLDER_DATA_URL_LENGTH
+  ) {
     throw new InvalidImageError();
   }
 
   return {
     display: displayResult.data,
     thumbnail,
+    thumbnailPlaceholderDataUrl,
     width: displayResult.info.width,
     height: displayResult.info.height,
     totalByteSize: displayResult.data.byteLength + thumbnail.byteLength,

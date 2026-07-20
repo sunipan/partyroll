@@ -27,7 +27,9 @@ export {
 } from "./client-limits";
 
 export const MAX_DISPLAY_DIMENSION = 3000;
-export const MAX_THUMBNAIL_DIMENSION = 720;
+export const MAX_THUMBNAIL_DIMENSION = 640;
+export const THUMBNAIL_PLACEHOLDER_DIMENSION = 16;
+export const MAX_THUMBNAIL_PLACEHOLDER_DATA_URL_LENGTH = 2048;
 export const MAX_GALLERY_PHOTOS = 10_000;
 export const MAX_GALLERY_STORAGE_BYTES = 100 * 1024 * 1024 * 1024;
 export const UPLOAD_RESERVATION_SECONDS = 15 * 60;

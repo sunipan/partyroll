@@ -1,0 +1,630 @@
+{
+  "id": "cc5432d2-e91d-43de-a633-4239036a4a95",
+  "prevId": "9df97012-04a9-4b36-a3a1-61d61c262549",
+  "version": "7",
+  "dialect": "postgresql",
+  "tables": {
+    "public.galleries": {
+      "name": "galleries",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "owner_clerk_id": {
+          "name": "owner_clerk_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "slug": {
+          "name": "slug",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "access_version": {
+          "name": "access_version",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 1
+        },
+        "status": {
+          "name": "status",
+          "type": "gallery_status",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'open'"
+        },
+        "event_date": {
+          "name": "event_date",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "photo_count": {
+          "name": "photo_count",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "reserved_photo_count": {
+          "name": "reserved_photo_count",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "storage_bytes": {
+          "name": "storage_bytes",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "reserved_bytes": {
+          "name": "reserved_bytes",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "deletion_requested_at": {
+          "name": "deletion_requested_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "galleries_slug_unique": {
+          "name": "galleries_slug_unique",
+          "columns": [
+            {
+              "expression": "slug",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "galleries_owner_created_at_idx": {
+          "name": "galleries_owner_created_at_idx",
+          "columns": [
+            {
+              "expression": "owner_clerk_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "galleries_access_version_positive": {
+          "name": "galleries_access_version_positive",
+          "value": "\"galleries\".\"access_version\" >= 1"
+        },
+        "galleries_name_not_blank": {
+          "name": "galleries_name_not_blank",
+          "value": "length(btrim(\"galleries\".\"name\")) > 0"
+        },
+        "galleries_photo_count_nonnegative": {
+          "name": "galleries_photo_count_nonnegative",
+          "value": "\"galleries\".\"photo_count\" >= 0"
+        },
+        "galleries_reserved_photo_count_nonnegative": {
+          "name": "galleries_reserved_photo_count_nonnegative",
+          "value": "\"galleries\".\"reserved_photo_count\" >= 0"
+        },
+        "galleries_storage_bytes_nonnegative": {
+          "name": "galleries_storage_bytes_nonnegative",
+          "value": "\"galleries\".\"storage_bytes\" >= 0"
+        },
+        "galleries_reserved_bytes_nonnegative": {
+          "name": "galleries_reserved_bytes_nonnegative",
+          "value": "\"galleries\".\"reserved_bytes\" >= 0"
+        },
+        "galleries_deleting_metadata": {
+          "name": "galleries_deleting_metadata",
+          "value": "((\"galleries\".\"status\"::text = 'deleting' and \"galleries\".\"deletion_requested_at\" is not null) or (\"galleries\".\"status\"::text <> 'deleting' and \"galleries\".\"deletion_requested_at\" is null))"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.photos": {
+      "name": "photos",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "gallery_id": {
+          "name": "gallery_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "status": {
+          "name": "status",
+          "type": "photo_status",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'pending'"
+        },
+        "idempotency_key": {
+          "name": "idempotency_key",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "uploader_session_hash": {
+          "name": "uploader_session_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "quarantine_object_key": {
+          "name": "quarantine_object_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "quarantine_deleted_at": {
+          "name": "quarantine_deleted_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "declared_mime_type": {
+          "name": "declared_mime_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "original_filename": {
+          "name": "original_filename",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "media_kind": {
+          "name": "media_kind",
+          "type": "media_kind",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "original_object_key": {
+          "name": "original_object_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "display_object_key": {
+          "name": "display_object_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "thumbnail_object_key": {
+          "name": "thumbnail_object_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "thumbnail_placeholder_data_url": {
+          "name": "thumbnail_placeholder_data_url",
+          "type": "varchar(2048)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "declared_byte_size": {
+          "name": "declared_byte_size",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "mime_type": {
+          "name": "mime_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "byte_size": {
+          "name": "byte_size",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "width": {
+          "name": "width",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "height": {
+          "name": "height",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "reservation_expires_at": {
+          "name": "reservation_expires_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "processing_started_at": {
+          "name": "processing_started_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "completion_attempts": {
+          "name": "completion_attempts",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "next_processing_attempt_at": {
+          "name": "next_processing_attempt_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "ready_at": {
+          "name": "ready_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "rejected_at": {
+          "name": "rejected_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "photos_gallery_session_idempotency_unique": {
+          "name": "photos_gallery_session_idempotency_unique",
+          "columns": [
+            {
+              "expression": "gallery_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "uploader_session_hash",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "idempotency_key",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "photos_gallery_status_created_at_idx": {
+          "name": "photos_gallery_status_created_at_idx",
+          "columns": [
+            {
+              "expression": "gallery_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "status",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "photos_pending_expiration_idx": {
+          "name": "photos_pending_expiration_idx",
+          "columns": [
+            {
+              "expression": "status",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "reservation_expires_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "photos_gallery_id_galleries_id_fk": {
+          "name": "photos_gallery_id_galleries_id_fk",
+          "tableFrom": "photos",
+          "tableTo": "galleries",
+          "columnsFrom": [
+            "gallery_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "photos_declared_byte_size_positive": {
+          "name": "photos_declared_byte_size_positive",
+          "value": "\"photos\".\"declared_byte_size\" > 0"
+        },
+        "photos_byte_size_positive": {
+          "name": "photos_byte_size_positive",
+          "value": "\"photos\".\"byte_size\" is null or \"photos\".\"byte_size\" > 0"
+        },
+        "photos_width_positive": {
+          "name": "photos_width_positive",
+          "value": "\"photos\".\"width\" is null or \"photos\".\"width\" > 0"
+        },
+        "photos_height_positive": {
+          "name": "photos_height_positive",
+          "value": "\"photos\".\"height\" is null or \"photos\".\"height\" > 0"
+        },
+        "photos_image_derivatives_required": {
+          "name": "photos_image_derivatives_required",
+          "value": "(\"photos\".\"media_kind\" <> 'image') or (\"photos\".\"display_object_key\" is not null and \"photos\".\"thumbnail_object_key\" is not null and (\"photos\".\"status\"::text <> 'ready' or (\"photos\".\"width\" is not null and \"photos\".\"height\" is not null)))"
+        },
+        "photos_video_original_only": {
+          "name": "photos_video_original_only",
+          "value": "(\"photos\".\"media_kind\" <> 'video') or (\"photos\".\"display_object_key\" is null and \"photos\".\"thumbnail_object_key\" is null and \"photos\".\"thumbnail_placeholder_data_url\" is null and \"photos\".\"width\" is null and \"photos\".\"height\" is null)"
+        },
+        "photos_original_object_key_not_blank": {
+          "name": "photos_original_object_key_not_blank",
+          "value": "length(btrim(\"photos\".\"original_object_key\")) > 0"
+        },
+        "photos_original_filename_not_blank": {
+          "name": "photos_original_filename_not_blank",
+          "value": "length(btrim(\"photos\".\"original_filename\")) > 0"
+        },
+        "photos_declared_mime_type_not_blank": {
+          "name": "photos_declared_mime_type_not_blank",
+          "value": "length(btrim(\"photos\".\"declared_mime_type\")) > 0"
+        },
+        "photos_display_object_key_not_blank": {
+          "name": "photos_display_object_key_not_blank",
+          "value": "\"photos\".\"display_object_key\" is null or length(btrim(\"photos\".\"display_object_key\")) > 0"
+        },
+        "photos_thumbnail_object_key_not_blank": {
+          "name": "photos_thumbnail_object_key_not_blank",
+          "value": "\"photos\".\"thumbnail_object_key\" is null or length(btrim(\"photos\".\"thumbnail_object_key\")) > 0"
+        },
+        "photos_thumbnail_placeholder_data_url_valid": {
+          "name": "photos_thumbnail_placeholder_data_url_valid",
+          "value": "\"photos\".\"thumbnail_placeholder_data_url\" is null or (left(\"photos\".\"thumbnail_placeholder_data_url\", 23) = 'data:image/jpeg' || chr(59) || 'base64,' and substring(\"photos\".\"thumbnail_placeholder_data_url\" from 24) ~ '^[A-Za-z0-9+/]+={0,2}$' and mod(length(\"photos\".\"thumbnail_placeholder_data_url\") - 23, 4) = 0)"
+        },
+        "photos_quarantine_object_key_not_blank": {
+          "name": "photos_quarantine_object_key_not_blank",
+          "value": "length(btrim(\"photos\".\"quarantine_object_key\")) > 0"
+        },
+        "photos_declared_media_kind_matches_mime": {
+          "name": "photos_declared_media_kind_matches_mime",
+          "value": "((\"photos\".\"media_kind\" = 'image' and \"photos\".\"declared_mime_type\" in ('image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif')) or (\"photos\".\"media_kind\" = 'video' and \"photos\".\"declared_mime_type\" in ('video/mp4', 'video/quicktime', 'video/webm')))"
+        },
+        "photos_ready_final_metadata_required": {
+          "name": "photos_ready_final_metadata_required",
+          "value": "(\"photos\".\"status\"::text <> 'ready') or (\"photos\".\"ready_at\" is not null and \"photos\".\"mime_type\" is not null and \"photos\".\"byte_size\" is not null)"
+        },
+        "photos_non_ready_final_metadata_absent": {
+          "name": "photos_non_ready_final_metadata_absent",
+          "value": "(\"photos\".\"status\"::text = 'ready') or (\"photos\".\"ready_at\" is null and \"photos\".\"mime_type\" is null and \"photos\".\"byte_size\" is null and \"photos\".\"width\" is null and \"photos\".\"height\" is null and \"photos\".\"thumbnail_placeholder_data_url\" is null)"
+        },
+        "photos_final_mime_type_matches_media_kind": {
+          "name": "photos_final_mime_type_matches_media_kind",
+          "value": "\"photos\".\"mime_type\" is null or ((\"photos\".\"media_kind\" = 'image' and \"photos\".\"mime_type\" in ('image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif')) or (\"photos\".\"media_kind\" = 'video' and \"photos\".\"mime_type\" in ('video/mp4', 'video/quicktime', 'video/webm')))"
+        },
+        "photos_completion_attempts_nonnegative": {
+          "name": "photos_completion_attempts_nonnegative",
+          "value": "\"photos\".\"completion_attempts\" >= 0"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.rate_limit_counters": {
+      "name": "rate_limit_counters",
+      "schema": "",
+      "columns": {
+        "key_hash": {
+          "name": "key_hash",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "scope": {
+          "name": "scope",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "attempts": {
+          "name": "attempts",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "window_started_at": {
+          "name": "window_started_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "expires_at": {
+          "name": "expires_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {
+        "rate_limit_counters_expires_at_idx": {
+          "name": "rate_limit_counters_expires_at_idx",
+          "columns": [
+            {
+              "expression": "expires_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "rate_limit_counters_attempts_nonnegative": {
+          "name": "rate_limit_counters_attempts_nonnegative",
+          "value": "\"rate_limit_counters\".\"attempts\" >= 0"
+        },
+        "rate_limit_counters_scope_not_blank": {
+          "name": "rate_limit_counters_scope_not_blank",
+          "value": "length(btrim(\"rate_limit_counters\".\"scope\")) > 0"
+        }
+      },
+      "isRLSEnabled": false
+    }
+  },
+  "enums": {
+    "public.gallery_status": {
+      "name": "gallery_status",
+      "schema": "public",
+      "values": [
+        "open",
+        "closed",
+        "archived",
+        "deleting"
+      ]
+    },
+    "public.media_kind": {
+      "name": "media_kind",
+      "schema": "public",
+      "values": [
+        "image",
+        "video"
+      ]
+    },
+    "public.photo_status": {
+      "name": "photo_status",
+      "schema": "public",
+      "values": [
+        "pending",
+        "processing",
+        "ready",
+        "rejected",
+        "deleting"
+      ]
+    }
+  },
+  "schemas": {},
+  "sequences": {},
+  "roles": {},
+  "policies": {},
+  "views": {},
+  "_meta": {
+    "columns": {},
+    "schemas": {},
+    "tables": {}
+  }
+}

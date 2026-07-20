@@ -6,11 +6,12 @@ import {
   MAX_DISPLAY_DIMENSION,
   MAX_THUMBNAIL_DIMENSION,
   MAX_THUMBNAIL_PLACEHOLDER_DATA_URL_LENGTH,
+  THUMBNAIL_PLACEHOLDER_DATA_URL_PREFIX,
   THUMBNAIL_PLACEHOLDER_DIMENSION,
+  isValidThumbnailPlaceholderDataUrl,
 } from "./rules";
 
 const SUPPORTED_FORMATS = new Set(["jpeg", "png", "webp", "heif"]);
-const JPEG_DATA_URL_PREFIX = "data:image/jpeg;base64,";
 
 export type ProcessedPhoto = {
   display: Buffer;
@@ -86,13 +87,15 @@ async function processValidatedImage(source: Buffer): Promise<ProcessedPhoto> {
     })
     .toBuffer();
   const thumbnailPlaceholderDataUrl =
-    JPEG_DATA_URL_PREFIX + thumbnailPlaceholder.toString("base64");
+    THUMBNAIL_PLACEHOLDER_DATA_URL_PREFIX +
+    thumbnailPlaceholder.toString("base64");
 
   if (
     !displayResult.info.width ||
     !displayResult.info.height ||
     thumbnailPlaceholderDataUrl.length >
-      MAX_THUMBNAIL_PLACEHOLDER_DATA_URL_LENGTH
+      MAX_THUMBNAIL_PLACEHOLDER_DATA_URL_LENGTH ||
+    !isValidThumbnailPlaceholderDataUrl(thumbnailPlaceholderDataUrl)
   ) {
     throw new InvalidImageError();
   }

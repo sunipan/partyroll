@@ -30,6 +30,8 @@ export const MAX_DISPLAY_DIMENSION = 3000;
 export const MAX_THUMBNAIL_DIMENSION = 640;
 export const THUMBNAIL_PLACEHOLDER_DIMENSION = 16;
 export const MAX_THUMBNAIL_PLACEHOLDER_DATA_URL_LENGTH = 2048;
+export const THUMBNAIL_PLACEHOLDER_DATA_URL_PREFIX =
+  "data:image/jpeg;base64,";
 export const MAX_GALLERY_PHOTOS = 10_000;
 export const MAX_GALLERY_STORAGE_BYTES = 100 * 1024 * 1024 * 1024;
 export const UPLOAD_RESERVATION_SECONDS = 15 * 60;
@@ -108,6 +110,21 @@ export function isSupportedUploadMimeType(
   mimeType: string,
 ): mimeType is SupportedUploadMimeType {
   return isSupportedImageMimeType(mimeType) || isSupportedVideoMimeType(mimeType);
+}
+
+export function isValidThumbnailPlaceholderDataUrl(
+  value: unknown,
+): value is string {
+  if (
+    typeof value !== "string" ||
+    value.length > MAX_THUMBNAIL_PLACEHOLDER_DATA_URL_LENGTH ||
+    !value.startsWith(THUMBNAIL_PLACEHOLDER_DATA_URL_PREFIX)
+  ) {
+    return false;
+  }
+
+  const base64 = value.slice(THUMBNAIL_PLACEHOLDER_DATA_URL_PREFIX.length);
+  return /^[A-Za-z0-9+/]+={0,2}$/.test(base64) && base64.length % 4 === 0;
 }
 
 function getMediaKindLabel(mediaKind: UploadMediaKind) {

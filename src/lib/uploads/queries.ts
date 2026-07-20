@@ -9,6 +9,7 @@ import { GUEST_ACCESSIBLE_GALLERY_STATUSES } from "@/lib/galleries/rules";
 import {
   getMediaKindForMimeType,
   isSupportedImageMimeType,
+  isValidThumbnailPlaceholderDataUrl,
   MAX_GALLERY_PHOTOS,
   MAX_GALLERY_STORAGE_BYTES,
   type ReserveUploadInput,
@@ -764,6 +765,13 @@ export async function markPhotoReady({
   thumbnailPlaceholderDataUrl: string | null;
   now?: Date;
 }): Promise<MarkPhotoReadyResult> {
+  if (
+    isSupportedImageMimeType(mimeType) &&
+    !isValidThumbnailPlaceholderDataUrl(thumbnailPlaceholderDataUrl)
+  ) {
+    throw new Error("Ready image is missing a valid thumbnail placeholder.");
+  }
+
   try {
     return await db.transaction(async (tx) => {
       const [photo] = await tx

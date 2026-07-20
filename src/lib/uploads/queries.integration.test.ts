@@ -2,10 +2,25 @@ import { randomUUID } from "node:crypto";
 
 import { config } from "dotenv";
 import { eq, inArray } from "drizzle-orm";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import sharp from "sharp";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 config({ path: [".env.local", ".env"], quiet: true });
 vi.mock("server-only", () => ({}));
+vi.mock("./objects", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./objects")>();
+
+  return {
+    ...actual,
+    assertOriginalObject: vi.fn(),
+    copyQuarantineObjectToOriginal: vi.fn(),
+    deleteUploadObjects: vi.fn(),
+    putProcessedObject: vi.fn(),
+    readQuarantineObject: vi.fn(),
+  };
+});
 
 const owner = `partyroll-upload-test-${randomUUID()}`;
 const sessionHash = "a".repeat(64);
@@ -993,6 +1008,177 @@ describe("photo upload reservations", () => {
       }
     },
     15_000,
+  );
+
+  it(
+    "refuses to finalize a new image without a valid thumbnail placeholder",
+    async () => {
+      const gallery = await galleryQueries.createGalleryForOwner(owner, {
+        name: `Upload Placeholder Required ${randomUUID()}`,
+        eventDate: undefined,
+      });
+      const reservation = await uploadQueries.reservePhotoUpload({
+        galleryId: gallery.id,
+        accessVersion: gallery.accessVersion,
+        uploaderSessionHash: sessionHash,
+        input: {
+          slug: gallery.slug,
+          idempotencyKey: randomUUID(),
+          mimeType: "image/jpeg",
+          byteSize,
+          originalFilename: "missing-placeholder.jpg",
+        },
+        ...createReservationIdentity(),
+      });
+
+      try {
+        expect(reservation.outcome).toBe("reserved");
+        if (reservation.outcome !== "reserved") {
+          throw new Error("Placeholder reservation was not created.");
+        }
+
+        const claim = await uploadQueries.claimPhotoForProcessing({
+          photoId: reservation.photo.id,
+          galleryId: gallery.id,
+          uploaderSessionHash: sessionHash,
+        });
+        expect(claim?.processingStartedAt).toBeInstanceOf(Date);
+
+        await expect(
+          uploadQueries.markPhotoReady({
+            photoId: reservation.photo.id,
+            galleryId: gallery.id,
+            processingStartedAt: claim!.processingStartedAt!,
+            finalByteSize: byteSize,
+            mimeType: "image/jpeg",
+            width: 800,
+            height: 600,
+            thumbnailPlaceholderDataUrl: null,
+          }),
+        ).rejects.toThrow("valid thumbnail placeholder");
+
+        const [persistedPhoto] = await db
+          .select({
+            status: photos.status,
+            thumbnailPlaceholderDataUrl: photos.thumbnailPlaceholderDataUrl,
+          })
+          .from(photos)
+          .where(eq(photos.id, reservation.photo.id));
+        expect(persistedPhoto).toEqual({
+          status: "processing",
+          thumbnailPlaceholderDataUrl: null,
+        });
+      } finally {
+        await db.delete(galleries).where(eq(galleries.id, gallery.id));
+      }
+    },
+    15_000,
+  );
+
+  it(
+    "carries a real Sharp placeholder through completion, persistence, views, and UI",
+    async () => {
+      const [completion, objects, media, galleryViewer] = await Promise.all([
+        import("./completion"),
+        import("./objects"),
+        import("./media"),
+        import("@/components/gallery/media-viewer"),
+      ]);
+      const source = await sharp({
+        create: {
+          width: 96,
+          height: 72,
+          channels: 3,
+          background: { r: 222, g: 71, b: 46 },
+        },
+      })
+        .jpeg({ quality: 85 })
+        .toBuffer();
+      vi.mocked(objects.readQuarantineObject).mockResolvedValue(source);
+
+      const gallery = await galleryQueries.createGalleryForOwner(owner, {
+        name: `Upload Completion Integration ${randomUUID()}`,
+        eventDate: undefined,
+      });
+      const photoId = randomUUID();
+      const reservation = await uploadQueries.reservePhotoUpload({
+        galleryId: gallery.id,
+        accessVersion: gallery.accessVersion,
+        uploaderSessionHash: sessionHash,
+        input: {
+          slug: gallery.slug,
+          idempotencyKey: randomUUID(),
+          mimeType: "image/jpeg",
+          byteSize: source.byteLength,
+          originalFilename: "sharp-placeholder-integration.jpg",
+        },
+        photoId,
+        reservationExpiresAt: new Date(Date.now() + 15 * 60 * 1000),
+      });
+
+      try {
+        expect(reservation.outcome).toBe("reserved");
+
+        const result = await completion.completePhotoUpload({
+          photoId,
+          galleryId: gallery.id,
+          uploaderSessionHash: sessionHash,
+        });
+        expect(result.outcome).toBe("ready");
+        if (result.outcome !== "ready") {
+          throw new Error("Real image completion did not become ready.");
+        }
+
+        const placeholder = result.photo.thumbnailPlaceholderDataUrl;
+        expect(placeholder).toMatch(
+          /^data:image\/jpeg;base64,[A-Za-z0-9+/]+={0,2}$/,
+        );
+        expect(placeholder!.length).toBeLessThanOrEqual(2048);
+
+        const [persistedPhoto] = await db
+          .select({
+            thumbnailPlaceholderDataUrl: photos.thumbnailPlaceholderDataUrl,
+          })
+          .from(photos)
+          .where(eq(photos.id, photoId));
+        expect(persistedPhoto.thumbnailPlaceholderDataUrl).toBe(placeholder);
+
+        const [guestPage, ownerPage] = await Promise.all([
+          media.listReadyMediaForGuestGallery({
+            galleryId: gallery.id,
+            slug: gallery.slug,
+            accessVersion: gallery.accessVersion,
+          }),
+          media.listReadyMediaForOwnerGallery({
+            ownerClerkId: owner,
+            galleryId: gallery.id,
+          }),
+        ]);
+        const guestItem = guestPage.items.find((item) => item.id === photoId);
+        const ownerItem = ownerPage.items.find((item) => item.id === photoId);
+        expect(guestItem?.thumbnailPlaceholderDataUrl).toBe(placeholder);
+        expect(ownerItem?.thumbnailPlaceholderDataUrl).toBe(placeholder);
+
+        for (const item of [guestItem, ownerItem]) {
+          expect(item).toBeDefined();
+          const html = renderToStaticMarkup(
+            createElement(galleryViewer.GalleryMediaViewer, {
+              items: [item!],
+            }),
+          );
+          expect(html).toContain(placeholder!);
+          expect(html).toContain("blur-md");
+          expect(html).toContain("opacity-0");
+          expect(html).toContain("motion-reduce:transition-none");
+          expect(html.indexOf(placeholder!)).toBeLessThan(
+            html.indexOf(item!.thumbnailUrl!),
+          );
+        }
+      } finally {
+        await db.delete(galleries).where(eq(galleries.id, gallery.id));
+      }
+    },
+    30_000,
   );
 
   it("tracks ready-photo quarantine cleanup idempotently", async () => {

@@ -115,7 +115,9 @@ export default async function GalleryAdminPage({
         <div className="mt-10 grid gap-6 lg:grid-cols-[minmax(0,1fr)_18rem]">
           <Card className="bg-card shadow-xs">
             <CardHeader>
-              <CardTitle>Guest invitation</CardTitle>
+              <CardTitle>
+                <h2>Guest invitation</h2>
+              </CardTitle>
               <CardDescription className="leading-6">
                 Share the code for manual entry or the link as a QR invitation.
                 Guests can use either invitation to open the gallery and upload media.
@@ -129,7 +131,9 @@ export default async function GalleryAdminPage({
 
           <Card className="bg-card shadow-xs">
             <CardHeader>
-              <CardTitle>QR invitation</CardTitle>
+              <CardTitle>
+                <h2>QR invitation</h2>
+              </CardTitle>
               <CardDescription>Version {gallery.accessVersion}</CardDescription>
             </CardHeader>
             <CardContent className="flex flex-col items-center gap-4">
@@ -155,20 +159,40 @@ export default async function GalleryAdminPage({
 
         <Card className="mt-6 bg-card shadow-xs">
           <CardHeader>
-            <CardTitle>Gallery availability</CardTitle>
+            <CardTitle>
+              <h2>Gallery availability</h2>
+            </CardTitle>
             <CardDescription className="leading-6">
               Current status: {gallery.status}. Status changes are reversible;
               archiving does not delete the gallery.
             </CardDescription>
           </CardHeader>
-          <CardContent>
+          <CardContent className="space-y-3">
             <GalleryStatusControls galleryId={gallery.id} status={gallery.status} />
+            <form
+              action={regenerateGalleryAccessAction}
+              className="flex flex-col gap-3 rounded-lg border border-primary/20 bg-primary/5 p-4 sm:flex-row sm:items-center sm:justify-between"
+            >
+              <input type="hidden" name="galleryId" value={gallery.id} />
+              <div>
+                <h3 className="font-medium">Regenerate guest access</h3>
+                <p className="mt-1 text-sm leading-6 text-muted-foreground">
+                  Create a new code and QR invitation. Existing invitations will no
+                  longer work once guest access is enabled.
+                </p>
+              </div>
+              <Button type="submit" variant="outline" className="shrink-0">
+                Regenerate access
+              </Button>
+            </form>
           </CardContent>
         </Card>
 
         <Card className="mt-6 bg-card shadow-xs">
           <CardHeader>
-            <CardTitle>Uploaded media</CardTitle>
+            <CardTitle>
+              <h2>Uploaded media</h2>
+            </CardTitle>
             <CardDescription className="leading-6">
               {readyMedia.length === 0
                 ? cursor === undefined
@@ -224,23 +248,6 @@ export default async function GalleryAdminPage({
           </CardContent>
         </Card>
 
-        <Card className="mt-6 border-primary/20 bg-primary/5 shadow-none">
-          <CardHeader>
-            <CardTitle>Regenerate guest access</CardTitle>
-            <CardDescription className="leading-6">
-              Create a new code and QR invitation. Existing invitations will no
-              longer work once guest access is enabled.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <form action={regenerateGalleryAccessAction}>
-              <input type="hidden" name="galleryId" value={gallery.id} />
-              <Button type="submit" variant="outline">
-                Regenerate access
-              </Button>
-            </form>
-          </CardContent>
-        </Card>
       </section>
     </main>
   );

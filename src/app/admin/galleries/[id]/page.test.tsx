@@ -39,7 +39,7 @@ describe("GalleryAdminPage media", () => {
     vi.clearAllMocks();
   });
 
-  it("renders admin media previews and downloads with stable owner paths", async () => {
+  it("renders admin media in two mobile columns with stable owner paths", async () => {
     const galleryId = randomUUID();
     const imageId = randomUUID();
     const videoId = randomUUID();
@@ -125,6 +125,12 @@ describe("GalleryAdminPage media", () => {
     expect(html).toContain("using 4 kB");
     expect(html).toContain("Next media page");
     expect(html).toContain("next-cursor");
+    expect(html.indexOf("Regenerate guest access")).toBeLessThan(
+      html.indexOf("Uploaded media"),
+    );
+    expect(html).toContain(
+      'class="grid grid-cols-2 gap-4 sm:grid-cols-2 lg:grid-cols-3"',
+    );
     expect(html).not.toContain("autoplay");
     expect(html).not.toMatch(r2CredentialUrlPattern);
     expect(listReadyMediaForOwnerGallery).toHaveBeenCalledWith({

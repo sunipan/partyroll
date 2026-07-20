@@ -38,12 +38,12 @@ export function JoinExchange() {
 
   if (error) {
     return (
-      <div className="space-y-5 text-center">
+      <div className="mx-auto max-w-sm space-y-6 text-center">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">
+          <h1 className="text-3xl leading-tight font-semibold tracking-tight">
             Invitation unavailable
           </h1>
-          <p role="alert" className="mt-3 leading-7 text-muted-foreground">
+          <p role="alert" className="mt-4 leading-7 text-muted-foreground">
             {error}
           </p>
         </div>
@@ -55,15 +55,21 @@ export function JoinExchange() {
   }
 
   return (
-    <div className="text-center" role="status" aria-live="polite">
-      <LoaderCircle
-        aria-hidden="true"
-        className="mx-auto size-8 animate-spin text-primary"
-      />
-      <h1 className="mt-5 text-2xl font-semibold tracking-tight">
+    <div
+      className="mx-auto max-w-sm text-center"
+      role="status"
+      aria-live="polite"
+    >
+      <span className="mx-auto flex size-14 items-center justify-center rounded-full bg-accent">
+        <LoaderCircle
+          aria-hidden="true"
+          className="size-7 text-primary motion-safe:animate-spin"
+        />
+      </span>
+      <h1 className="mt-6 text-3xl leading-tight font-semibold tracking-tight">
         Opening your gallery
       </h1>
-      <p className="mt-2 text-muted-foreground">
+      <p className="mt-3 leading-7 text-muted-foreground">
         Checking your private invitation.
       </p>
     </div>

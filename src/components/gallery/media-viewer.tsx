@@ -145,7 +145,7 @@ export function GalleryMediaViewer({
               className={
                 presentation === "guest"
                   ? "motion-interactive min-w-0 overflow-hidden rounded-xl border border-primary/15 bg-card shadow-[var(--shadow-paper)] hover:border-primary/30"
-                  : "overflow-hidden rounded-xl border bg-card shadow-xs"
+                  : "min-w-0 overflow-hidden rounded-xl border border-primary/10 bg-card shadow-[var(--shadow-control)]"
               }
             >
               <button
@@ -200,7 +200,7 @@ export function GalleryMediaViewer({
                   </span>
                 )}
               </button>
-              <div className={presentation === "guest" ? "space-y-3 p-2.5 sm:p-4" : "space-y-3 p-3"}>
+              <div className={presentation === "guest" ? "space-y-3 p-2.5 sm:p-4" : "min-w-0 space-y-2.5 p-2.5 sm:p-3"}>
                 <div>
                   <p
                     id={nameId}
@@ -215,7 +215,7 @@ export function GalleryMediaViewer({
                     {formatGalleryMediaDetails(media)}
                   </p>
                 </div>
-                <div className="flex flex-wrap gap-2">
+                <div className="grid min-w-0 gap-2 sm:flex sm:flex-wrap">
                   <a
                     href={media.downloadUrl}
                     className={buttonVariants({
@@ -224,7 +224,7 @@ export function GalleryMediaViewer({
                       className:
                         presentation === "guest"
                           ? "h-10 w-full min-w-0 px-2.5 sm:w-auto"
-                          : undefined,
+                          : "w-full min-w-0 px-2 sm:w-auto",
                     })}
                     download={media.originalFilename}
                     aria-label={getDownloadViewerActionLabel(media)}
@@ -237,11 +237,17 @@ export function GalleryMediaViewer({
                       </>
                     ) : (
                       <>
-                        Download original<span className="sr-only"> {media.originalFilename}</span>
+                        <Download aria-hidden="true" />
+                        Download
+                        <span className="sr-only"> original {media.originalFilename}</span>
                       </>
                     )}
                   </a>
-                  {itemActions?.[index] ?? null}
+                  {itemActions?.[index] ? (
+                    <div className="min-w-0 break-words [&>div]:w-full [&_button]:w-full sm:[&>div]:w-auto sm:[&_button]:w-auto">
+                      {itemActions[index]}
+                    </div>
+                  ) : null}
                 </div>
               </div>
             </article>

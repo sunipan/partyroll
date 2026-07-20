@@ -125,6 +125,12 @@ describe("GalleryAdminPage media", () => {
     expect(html).toContain("using 4 kB");
     expect(html).toContain("Next media page");
     expect(html).toContain("next-cursor");
+    expect(html).toContain("Gallery workspace");
+    expect(html).toContain("tracking-[0.16em]");
+    expect(html).toContain("Download QR code");
+    expect(html.indexOf("Guest invitation")).toBeLessThan(
+      html.indexOf("Gallery availability"),
+    );
     expect(html.indexOf("Regenerate guest access")).toBeLessThan(
       html.indexOf("Uploaded media"),
     );

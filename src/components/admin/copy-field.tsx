@@ -10,9 +10,11 @@ import { Label } from "@/components/ui/label";
 export function CopyField({
   label,
   value,
+  prominent = false,
 }: {
   label: string;
   value: string;
+  prominent?: boolean;
 }) {
   const inputId = useId();
   const statusId = useId();
@@ -29,23 +31,29 @@ export function CopyField({
   }
 
   return (
-    <div className="space-y-2">
-      <Label htmlFor={inputId}>{label}</Label>
-      <div className="flex flex-col gap-2 sm:flex-row">
+    <div className="min-w-0 space-y-1.5">
+      <Label htmlFor={inputId} className="text-xs font-semibold tracking-wide uppercase">
+        {label}
+      </Label>
+      <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] gap-2">
         <Input
           id={inputId}
           value={value}
           readOnly
           aria-describedby={statusId}
-          className="h-10 font-mono text-xs"
+          className={
+            prominent
+              ? "h-9 min-w-0 bg-background font-mono text-base font-semibold tracking-[0.16em]"
+              : "h-9 min-w-0 bg-background font-mono text-xs"
+          }
           onFocus={(event) => event.currentTarget.select()}
         />
-        <Button type="button" variant="outline" onClick={copyValue}>
+        <Button type="button" variant="outline" size="sm" onClick={copyValue}>
           {status === "copied" ? <Check aria-hidden="true" /> : <Copy aria-hidden="true" />}
           {status === "copied" ? "Copied" : "Copy"}
         </Button>
       </div>
-      <p id={statusId} className="min-h-5 text-sm text-muted-foreground" aria-live="polite">
+      <p id={statusId} className="min-h-4 text-xs leading-4 text-muted-foreground" aria-live="polite">
         {status === "copied"
           ? `${label} copied to the clipboard.`
           : status === "error"

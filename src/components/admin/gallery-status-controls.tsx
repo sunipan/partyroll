@@ -28,26 +28,35 @@ export function GalleryStatusControls({
 }) {
   const transitions = getAllowedGalleryTransitions(status);
 
+  if (transitions.length === 0) {
+    return (
+      <p className="rounded-xl border border-dashed border-destructive/20 bg-destructive/5 p-3 text-sm leading-5 text-muted-foreground">
+        Status changes are unavailable while gallery deletion is in progress.
+      </p>
+    );
+  }
+
   return (
-    <div className="space-y-3">
+    <div className="grid gap-3 md:grid-cols-2">
       {transitions.map((nextStatus) => (
         <form
           action={updateGalleryStatusAction}
           key={nextStatus}
-          className="flex flex-col gap-3 rounded-lg border p-4 sm:flex-row sm:items-center sm:justify-between"
+          className="flex min-w-0 flex-col gap-3 rounded-xl border border-primary/10 bg-muted/25 p-3 sm:flex-row sm:items-center sm:justify-between md:flex-col md:items-stretch lg:flex-row lg:items-center"
         >
           <input type="hidden" name="galleryId" value={galleryId} />
           <input type="hidden" name="nextStatus" value={nextStatus} />
           <div>
             <p className="font-medium">{transitionLabels[nextStatus]}</p>
-            <p className="mt-1 text-sm leading-6 text-muted-foreground">
+            <p className="mt-1 text-sm leading-5 text-muted-foreground">
               {transitionDescriptions[nextStatus]}
             </p>
           </div>
           <Button
             type="submit"
             variant={nextStatus === "archived" ? "outline" : "default"}
-            className="shrink-0"
+            size="sm"
+            className="w-full shrink-0 sm:w-auto md:w-full lg:w-auto"
           >
             {transitionLabels[nextStatus]}
           </Button>

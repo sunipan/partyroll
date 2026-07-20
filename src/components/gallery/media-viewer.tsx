@@ -161,17 +161,10 @@ export function GalleryMediaViewer({
                 onClick={(event) => openViewer(media.id, event.currentTarget)}
               >
                 {media.mediaKind === "image" ? (
-                  /* eslint-disable-next-line @next/next/no-img-element -- Private media uses authenticated same-origin routes. */
-                  <img
-                    src={media.thumbnailUrl ?? media.displayUrl}
-                    alt=""
-                    className={cn(
-                      "aspect-square w-full object-cover transition",
-                      presentation === "guest"
-                        ? "group-hover:scale-[1.015]"
-                        : "group-hover:scale-[1.01]",
-                    )}
-                    loading="lazy"
+                  <GalleryImageThumbnail
+                    key={`${media.id}:${media.thumbnailUrl ?? media.displayUrl}`}
+                    media={media}
+                    presentation={presentation}
                   />
                 ) : (
                   <span className="relative block aspect-square w-full overflow-hidden bg-black text-white">
@@ -272,6 +265,81 @@ export function GalleryMediaViewer({
       ) : null}
     </>
   );
+}
+
+export function GalleryImageThumbnail({
+  media,
+  presentation,
+}: {
+  media: GalleryMediaViewerItem;
+  presentation: "default" | "guest";
+}) {
+  const source = media.thumbnailUrl ?? media.displayUrl;
+  const imageRef = useRef<HTMLImageElement>(null);
+  const [loadedSource, setLoadedSource] = useState<string | null>(null);
+  const loadState = getGalleryThumbnailLoadState(source, loadedSource);
+
+  async function revealThumbnail(image: HTMLImageElement, loadedImageSource: string) {
+    try {
+      await image.decode();
+    } catch {
+      // A successful load is still usable when decoding is unsupported or rejects.
+    }
+
+    if (
+      imageRef.current === image &&
+      image.getAttribute("src") === loadedImageSource
+    ) {
+      setLoadedSource(loadedImageSource);
+    }
+  }
+
+  useEffect(() => {
+    const image = imageRef.current;
+    if (!image?.complete || image.naturalWidth === 0) return;
+
+    void revealThumbnail(image, source);
+  }, [source]);
+
+  return (
+    <span className="relative block aspect-square w-full overflow-hidden bg-muted">
+      {media.thumbnailPlaceholderDataUrl ? (
+        /* eslint-disable-next-line @next/next/no-img-element -- Inline server-generated LQIP avoids another request. */
+        <img
+          src={media.thumbnailPlaceholderDataUrl}
+          alt=""
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-0 size-full scale-110 object-cover blur-md"
+        />
+      ) : null}
+      {/* eslint-disable-next-line @next/next/no-img-element -- Private media uses authenticated same-origin routes. */}
+      <img
+        ref={imageRef}
+        src={source}
+        alt=""
+        className={cn(
+          "pointer-events-none relative size-full object-cover opacity-0 transition-[opacity,transform] duration-300 motion-reduce:transition-none",
+          loadState === "loaded" && "opacity-100",
+          presentation === "guest"
+            ? "group-hover:scale-[1.015]"
+            : "group-hover:scale-[1.01]",
+        )}
+        data-thumbnail-state={loadState}
+        decoding="async"
+        loading="lazy"
+        onLoad={(event) => {
+          void revealThumbnail(event.currentTarget, source);
+        }}
+      />
+    </span>
+  );
+}
+
+export function getGalleryThumbnailLoadState(
+  source: string,
+  loadedSource: string | null,
+) {
+  return source === loadedSource ? "loaded" : "loading";
 }
 
 export function GalleryMediaDialog({

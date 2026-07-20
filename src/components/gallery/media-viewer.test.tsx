@@ -4,11 +4,13 @@ import { describe, expect, it, vi } from "vitest";
 import {
   createCancelableMediaViewerCleanup,
   GalleryMediaDialog,
+  GalleryImageThumbnail,
   GalleryMediaViewer,
   formatGalleryMediaDetails,
   getActiveGalleryMediaItem,
   getDownloadViewerActionLabel,
   getGalleryVideoPreviewSource,
+  getGalleryThumbnailLoadState,
   getOpenViewerActionLabel,
   getViewerMediaSource,
   resetViewerVideo,
@@ -28,6 +30,12 @@ const imageItem: GalleryMediaViewerItem = {
   originalByteSize: 2_048,
   width: 800,
   height: 600,
+};
+
+const imageItemWithPlaceholder: GalleryMediaViewerItem = {
+  ...imageItem,
+  thumbnailPlaceholderDataUrl:
+    "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD",
 };
 
 const videoItem: GalleryMediaViewerItem = {
@@ -54,6 +62,9 @@ describe("GalleryMediaViewer", () => {
     expect(html).toContain(getOpenViewerActionLabel(imageItem));
     expect(html).toContain(getOpenViewerActionLabel(videoItem));
     expect(html).toContain(imageItem.thumbnailUrl);
+    expect(html).toContain('decoding="async"');
+    expect(html).toContain('loading="lazy"');
+    expect(html).toContain('data-thumbnail-state="loading"');
     expect(html).toContain(imageItem.downloadUrl);
     expect(html).toContain(videoItem.downloadUrl);
     expect(html).toContain(getDownloadViewerActionLabel(imageItem));
@@ -61,6 +72,57 @@ describe("GalleryMediaViewer", () => {
     expect(html).toContain("Video · 3 kB");
     expect(html).not.toContain("Delete media");
     expect(html).not.toContain("autoplay");
+  });
+
+  it("renders a decorative, non-interactive LQIP under a fading image thumbnail", () => {
+    const html = renderToStaticMarkup(
+      <GalleryImageThumbnail
+        media={imageItemWithPlaceholder}
+        presentation="default"
+      />,
+    );
+
+    expect(html).toContain(imageItemWithPlaceholder.thumbnailPlaceholderDataUrl);
+    expect(html).toContain('aria-hidden="true"');
+    expect(html).toContain('alt=""');
+    expect(html).toContain("pointer-events-none");
+    expect(html).toContain("scale-110");
+    expect(html).toContain("blur-md");
+    expect(html).toContain("opacity-0");
+    expect(html).toContain("transition-[opacity,transform]");
+    expect(html).toContain("motion-reduce:transition-none");
+    expect(html).toContain('decoding="async"');
+    expect(html).toContain('loading="lazy"');
+    expect(html).not.toContain("style=");
+  });
+
+  it("reveals only the source that finished loading", () => {
+    expect(
+      getGalleryThumbnailLoadState(imageItem.thumbnailUrl!, imageItem.thumbnailUrl),
+    ).toBe("loaded");
+    expect(
+      getGalleryThumbnailLoadState(
+        "/g/party/media/image-1/new-thumbnail",
+        imageItem.thumbnailUrl,
+      ),
+    ).toBe("loading");
+    expect(getGalleryThumbnailLoadState(imageItem.displayUrl, null)).toBe(
+      "loading",
+    );
+  });
+
+  it("retains the muted fallback for null image placeholders", () => {
+    const html = renderToStaticMarkup(
+      <GalleryImageThumbnail
+        media={{ ...imageItem, thumbnailPlaceholderDataUrl: null }}
+        presentation="default"
+      />,
+    );
+
+    expect(html).toContain("bg-muted");
+    expect(html).toContain(imageItem.thumbnailUrl);
+    expect(html).not.toContain("data:image/");
+    expect(html).toContain('data-thumbnail-state="loading"');
   });
 
   it("renders a paused, muted inline video preview from the protected display URL", () => {
@@ -76,6 +138,9 @@ describe("GalleryMediaViewer", () => {
     expect(html).toContain(">Video</span>");
     expect(html).not.toContain("autoplay");
     expect(html).not.toContain("controls");
+    expect(html).not.toContain("data:image/");
+    expect(html).not.toContain("data-thumbnail-state");
+    expect(html).not.toContain('decoding="async"');
   });
 
   it("uses two mobile and tablet columns while preserving three desktop columns", () => {
